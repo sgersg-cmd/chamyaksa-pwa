@@ -1,0 +1,2230 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>참메이트 통합관리 시스템 v7.1</title>
+
+    <!-- PWA 설정 -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="참메이트">
+    <meta name="theme-color" content="#0284c7">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAXG81c4wQLyN5b0lmFqLj2SVCW9Kkh1s8",
+            authDomain: "chamyaksa-admin.firebaseapp.com",
+            projectId: "chamyaksa-admin",
+            storageBucket: "chamyaksa-admin.firebasestorage.app",
+            messagingSenderId: "540804285794",
+            appId: "1:540804285794:web:71af0f174bd97bfcf2583b"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        window._db = db;
+        window._fbReady = false;
+        window._setDoc = setDoc;
+        window._doc = doc;
+        window._onSnapshot = onSnapshot;
+        window._collection = collection;
+        window._getDocs = getDocs;
+
+        // Firestore에서 초기 데이터 로드 + 실시간 리스너
+        const masterRef = doc(db, "chamyaksa", "master");
+        const timelineRef = doc(db, "chamyaksa", "timeline");
+
+        // 실시간 리스너 - 누가 수정하면 모두에게 즉시 반영
+        onSnapshot(masterRef, (snap) => {
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.list) {
+                    window.masterPharmacies = data.list;
+                    const active = document.activeElement;
+                    const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+                    if (window._fbReady && typeof window.refresh === 'function' && !isTyping) window.refresh();
+                }
+            }
+            // masterRef 로드만 돼도 ready 처리 (timeline 없어도 동작)
+            window._fbReady = true;
+        });
+
+        onSnapshot(timelineRef, (snap) => {
+            if (snap.exists()) {
+                const data = snap.data();
+                if (data.map) {
+                    const parsed = {};
+                    Object.keys(data.map).forEach(k => { parsed[parseInt(k)] = data.map[k]; });
+                    window.timelineMap = parsed;
+                    const active = document.activeElement;
+                    const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+                    if (window._fbReady && typeof window.refresh === 'function' && !isTyping) window.refresh();
+                }
+            }
+            window._fbReady = true;
+        });
+
+        // Firebase 저장 함수 (전역)
+        window.saveToFirebase = async function() {
+            try {
+                await setDoc(doc(db, "chamyaksa", "master"), { list: window.masterPharmacies });
+                // timelineMap key를 string으로 변환 (Firestore 요구사항)
+                const stringMap = {};
+                Object.keys(window.timelineMap).forEach(k => { stringMap[String(k)] = window.timelineMap[k]; });
+                await setDoc(doc(db, "chamyaksa", "timeline"), { map: stringMap });
+            } catch(e) {
+                console.error("Firebase 저장 오류:", e);
+            }
+        };
+
+        // ── 가맹상담/가입자/인익스테리어 실시간 리스너 ──
+        window.consultList = window.consultList || [];
+        window.memberList = window.memberList || [];
+        window.interiorList = window.interiorList || [];
+
+        onSnapshot(doc(db, "chamyaksa", "consults"), snap => {
+            if (snap.exists()) window.consultList = snap.data().list || [];
+            if (typeof window.renderConsults === 'function') window.renderConsults();
+        });
+        onSnapshot(doc(db, "chamyaksa", "members"), snap => {
+            if (snap.exists()) window.memberList = snap.data().list || [];
+            if (typeof window.renderMembers === 'function') window.renderMembers();
+        });
+        onSnapshot(doc(db, "chamyaksa", "interiors"), snap => {
+            if (snap.exists()) window.interiorList = snap.data().list || [];
+            if (typeof window.renderInteriors === 'function') window.renderInteriors();
+        });
+
+        window.saveConsults = async () => { try { await setDoc(doc(db, "chamyaksa", "consults"), { list: window.consultList }); } catch(e) { console.error(e); } };
+        window.saveMembers = async () => { try { await setDoc(doc(db, "chamyaksa", "members"), { list: window.memberList }); } catch(e) { console.error(e); } };
+        window.saveInteriors = async () => { try { await setDoc(doc(db, "chamyaksa", "interiors"), { list: window.interiorList }); } catch(e) { console.error(e); } };
+    </script>
+
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        .status-btn-container { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+        .status-btn { padding: 12px 0; font-size: 11px; font-weight: 700; text-align: center; white-space: nowrap; transition: all 0.2s; border-right: 1px solid #e2e8f0; }
+        .status-btn:last-child { border-right: none; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 12px; padding: 3px; }
+        .calendar-day-head { background: #003366; color: white; padding: 6px 2px; font-size: 11px; text-align: center; font-weight: 700; border-radius: 4px; }
+        .calendar-cell { background: white; min-height: 70px; padding: 4px 3px; border-radius: 5px; display: flex; flex-direction: column; gap: 2px; position: relative; overflow: hidden; }
+        .calendar-event { font-size: 8px; padding: 2px 4px; border-radius: 3px; font-weight: 700; line-height: 1.2; border-left: 2px solid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* 모바일 캘린더 팝업 */
+        #cal-popup { display:none; position:fixed; bottom:0; left:0; right:0; background:white; border-radius:16px 16px 0 0; padding:20px; z-index:1000; box-shadow:0 -4px 24px rgba(0,0,0,0.15); max-height:60vh; overflow-y:auto; }
+        #cal-popup-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:999; }
+        @media (min-width: 641px) { #cal-popup, #cal-popup-overlay { display:none !important; } }
+        @media (max-width: 640px) {
+            .calendar-grid { gap: 2px; padding: 2px; border-radius: 8px; }
+            .calendar-day-head { padding: 5px 1px; font-size: 10px; border-radius: 3px; }
+            .calendar-cell { min-height: 52px; padding: 3px 2px; gap: 2px; border-radius: 4px; }
+            .calendar-event { display: none; }
+            .calendar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+            .calendar-dots-row { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px; }
+            .cal-date-num { font-size: 9px !important; }
+        }
+        @media (min-width: 641px) {
+            .calendar-dot { display: none; }
+            .calendar-dots-row { display: none; }
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .warn-pulse { animation: pulse-red 2s infinite; }
+
+        /* ── 모바일 최적화 ── */
+        html, body { overflow-x: hidden; max-width: 100vw; }
+        * { box-sizing: border-box; }
+        /* 터치 타겟 최소 44px 보장 */
+        .main-tab-btn {
+            min-height: 44px;
+            -webkit-tap-highlight-color: rgba(255,255,255,0.15);
+            touch-action: manipulation;
+            cursor: pointer;
+        }
+        button, a, select, input[type="checkbox"], input[type="radio"] {
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* 모바일에서 탭 버튼 텍스트 크기 */
+        @media (max-width: 640px) {
+            .main-tab-btn { font-size: 11px !important; padding: 10px 10px !important; }
+            /* 모달 전체화면 */
+            .modal-box-mobile { max-height: 95vh !important; border-radius: 16px 16px 0 0 !important; position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; width: 100% !important; max-width: 100% !important; }
+            /* 섹션 패딩 축소 */
+            .section-mobile-pad { padding: 12px !important; }
+            /* 필터 영역 세로 정렬 */
+            .filter-wrap-mobile { flex-direction: column !important; }
+            .filter-wrap-mobile > * { width: 100% !important; }
+        }
+
+        /* 모바일 카드뷰 (테이블 대신) */
+        @media (max-width: 768px) {
+            /* 가로 스크롤 제거 */
+            .overflow-x-auto { overflow-x: visible !important; }
+            .min-w-\[1100px\], .min-w-\[1200px\], .min-w-\[1050px\] { min-width: 0 !important; }
+            .mobile-card-table thead { display: none; }
+            .mobile-card-table tbody tr {
+                display: block;
+                background: white;
+                border-radius: 12px;
+                border: 1px solid #e2e8f0;
+                padding: 12px;
+                margin-bottom: 10px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+            }
+            .mobile-card-table tbody td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 4px 0;
+                border: none !important;
+                font-size: 13px;
+            }
+            .mobile-card-table tbody td::before {
+                content: attr(data-label);
+                font-size: 10px;
+                font-weight: 700;
+                color: #94a3b8;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                flex-shrink: 0;
+                margin-right: 8px;
+            }
+            .mobile-card-table tbody td:first-child {
+                font-weight: 700;
+                font-size: 14px;
+                border-bottom: 1px solid #f1f5f9 !important;
+                padding-bottom: 8px !important;
+                margin-bottom: 4px;
+            }
+            /* 가로 스크롤 테이블 컨테이너 모바일에서 카드로 */
+            .overflow-x-auto.no-scrollbar { overflow-x: visible !important; }
+        }
+
+        /* 모달 모바일 슬라이드업 */
+        @media (max-width: 640px) {
+            .fixed.inset-0.z-50.bg-black\/60.items-center.justify-center:not(.hidden) {
+                align-items: flex-end !important;
+            }
+            .fixed.inset-0.z-50.bg-black\/60.items-center.justify-center > div {
+                border-radius: 20px 20px 0 0 !important;
+                max-width: 100% !important;
+                width: 100% !important;
+            }
+            .mobile-modal {
+                border-radius: 20px 20px 0 0 !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                max-height: 92vh !important;
+                padding: 20px 16px !important;
+            }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen pb-12" style="overflow-x:hidden">
+
+    <!-- PWA 스플래시 화면 -->
+    <div id="splash-screen" class="fixed inset-0 z-[9999] flex flex-col items-center justify-center gap-6" style="background: linear-gradient(160deg, #0ea5e9 0%, #0284c7 50%, #1e40af 100%);">
+        <div class="flex flex-col items-center gap-4 animate-pulse">
+            <img src="icon-512.png" alt="참약사" style="width:110px;height:110px;border-radius:28px;box-shadow:0 8px 32px rgba(0,0,0,0.25);">
+            <div class="text-center">
+                <p class="text-white text-2xl font-black tracking-tight">참메이트</p>
+                <p class="text-blue-100 text-sm font-bold tracking-widest">CharmMate</p>
+                <p class="text-blue-100 text-xs mt-1 font-medium">약국총괄사업부 가맹기획팀</p>
+            </div>
+        </div>
+        <div style="position:absolute;bottom:60px;" class="flex flex-col items-center gap-2">
+            <div style="width:36px;height:36px;border:3px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+            <p class="text-blue-100 text-xs">데이터 불러오는 중...</p>
+        </div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    </div>
+
+    <div id="expired-screen" class="fixed inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center text-white hidden p-6 text-center">
+        <div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl max-w-sm w-full space-y-5">
+            <i class="fa-solid fa-user-shield text-red-500 text-5xl animate-pulse"></i>
+            <h1 class="text-xl font-bold tracking-tight">접근 권한 만료 안내</h1>
+            <p class="text-xs text-slate-300 leading-relaxed">
+                해당 가맹점의 개설행정 전용 페이지가<br>안전하게 보호 조치 및 만료되었습니다.<br>문의사항은 본사 담당 부서로 연락 바랍니다.
+            </p>
+            <div class="text-xs md:text-sm bg-slate-800/90 border border-slate-700 p-3.5 rounded-xl text-left space-y-1 shadow-inner">
+                <div class="text-white font-bold flex items-center gap-1.5">
+                    <i class="fa-solid fa-circle-info text-blue-400"></i>
+                    <span>담당부서: 약국총괄사업부 가맹기획팀</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="celebration-screen" class="fixed inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 z-50 flex flex-col items-center justify-center text-white hidden p-6 text-center">
+        <div class="space-y-6 max-w-md bg-white/5 p-8 rounded-3xl border border-white/10 backdrop-blur-md shadow-2xl">
+            <div class="text-6xl">🎉✨</div>
+            <h1 class="text-2xl font-black tracking-tight text-amber-300">개국을 진심으로 축하드립니다!</h1>
+            <p class="text-sm text-slate-200 leading-relaxed">
+                약사님의 새로운 첫걸음을 함께하게 되어 기쁩니다.<br>참약사가 약사님의 빛나는 앞날을 언제나 응원하겠습니다.
+            </p>
+            <div class="bg-blue-600/20 border border-blue-500/30 rounded-2xl p-4 space-y-2 max-w-xs mx-auto">
+                <span class="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Final Progress</span>
+                <div class="text-2xl font-black text-emerald-400">진행률 100%</div>
+                <p class="text-[11px] text-slate-400">모든 개설 프로세스가 완벽하게 종료되었습니다.</p>
+            </div>
+        </div>
+    </div>
+
+    <header id="admin-header" class="bg-slate-900 text-white sticky top-0 z-40 shadow-md px-4 py-3 md:px-6 hidden">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+                <h1 class="text-lg font-bold flex items-center gap-2">
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v7.1</span>
+                    참메이트 통합관리 시스템
+                </h1>
+                <p class="text-xs text-slate-400 mt-0.5">참약사 약국총괄사업부 가맹기획팀 통합 대시보드</p>
+            </div>
+            <div class="flex gap-2 flex-wrap">
+                <button onclick="showIntegratedDashboard()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-sm">
+                    <i class="fa-solid fa-chart-pie mr-1"></i> 통합 대시보드
+                </button>
+            </div>
+        </div>
+        <!-- 통합 탭 내비게이션 (관리자만 표시) -->
+        <div class="max-w-7xl mx-auto mt-2 border-t border-slate-700 pt-2">
+            <div class="flex gap-1 overflow-x-auto no-scrollbar">
+                <button onclick="switchMainTab('tab-consult-main')" id="nav-consult" class="main-tab-btn active-tab text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap transition-all">
+                    <i class="fa-solid fa-comments mr-1"></i> 가맹상담
+                </button>
+                <button onclick="switchMainTab('tab-members-main')" id="nav-members" class="main-tab-btn text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap transition-all">
+                    <i class="fa-solid fa-users mr-1"></i> 가입자 관리
+                </button>
+                <button onclick="switchMainTab('tab-admin-main')" id="nav-admin" class="main-tab-btn text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap transition-all">
+                    <i class="fa-solid fa-building mr-1"></i> 개설행정
+                </button>
+                <button onclick="switchMainTab('tab-interior-main')" id="nav-interior" class="main-tab-btn text-xs font-bold px-4 py-2 rounded-lg whitespace-nowrap transition-all">
+                    <i class="fa-solid fa-paint-roller mr-1"></i> 인익스테리어
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <style>
+        .main-tab-btn { color: #94a3b8; background: transparent; border: none; cursor: pointer; }
+        .main-tab-btn:hover { color: #e2e8f0; background: rgba(255,255,255,0.08); }
+        .main-tab-btn.active-tab { color: #ffffff; background: rgba(255,255,255,0.15); }
+    </style>
+
+    <div id="pharmacist-banner" class="bg-gradient-to-r from-blue-700 to-indigo-600 text-white px-4 py-8 md:px-8 md:py-12 text-center shadow-inner hidden">
+        <div class="max-w-3xl mx-auto space-y-3">
+            <div class="inline-block bg-white/20 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full tracking-wider uppercase">Realtime Tracking System</div>
+            <h1 class="text-xl md:text-3xl font-black tracking-tight" id="pharm-welcome-title">약사님 안녕하세요! 개설 행정 실시간 확인 페이지입니다.</h1>
+            <p class="text-xs md:text-sm text-blue-100 opacity-90 max-w-xl mx-auto leading-relaxed">각 단계별 상태를 [대기/진행중/완료]로 변경해주시면 본사 담당자가 실시간 확인이 가능합니다.</p>
+            <div class="w-full max-w-xs sm:max-w-sm mx-auto bg-blue-900/40 rounded-full h-5 mt-6 p-0.5 border border-white/10 relative overflow-hidden">
+                <div id="pharm-progress-bar" class="bg-emerald-400 h-full rounded-full transition-all duration-700" style="width: 0%"></div>
+                <span id="pharm-progress-text" class="absolute inset-0 flex items-center justify-center text-[9px] font-bold text-white">0%</span>
+            </div>
+        </div>
+    </div>
+
+    <main class="max-w-7xl mx-auto px-2 sm:px-4 mt-4 sm:mt-6 space-y-4 sm:space-y-6">
+
+    <!-- ====== 탭1: 개설행정 (기존) ====== -->
+    <div id="tab-admin-main" class="space-y-6" style="display:none !important">
+        <section id="admin-dashboard-section" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6">
+            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2 mb-4 border-b pb-3">
+                <i class="fa-solid fa-table-list text-blue-600"></i> 전체 가맹점 관리 리스트 (<span id="total-count" class="text-blue-600">0</span>)
+                <span class="ml-auto flex gap-2">
+                    <button onclick="toggleCompletedList()" id="btn-show-completed" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 transition-all">
+                        <i class="fa-solid fa-box-archive mr-1"></i> 완료 약국 보기
+                    </button>
+                    <button onclick="showAdminDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200 transition-all">
+                        <i class="fa-solid fa-chart-bar mr-1"></i> 개설행정 대시보드
+                    </button>
+                    <button onclick="addNewPharmacyFromMember()" class="text-[10px] bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg transition-all">
+                        <i class="fa-solid fa-plus mr-1"></i> 신규 등록
+                    </button>
+                </span>
+            </h2>
+            <div class="overflow-x-auto no-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[1100px] mobile-card-table">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase">
+                            <th class="p-3 pl-4">약국명</th><th class="p-3">지역</th><th class="p-3">약사명</th><th class="p-3">계약일</th><th class="p-3">오픈예정일</th><th class="p-3">담당자</th><th class="p-3">인테리어</th><th class="p-3">진행률 (%)</th><th class="p-3 text-center">공유 관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pharmacy-table-body" class="text-sm divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            <div class="lg:col-span-2 space-y-6">
+                <div id="calendar-view" class="bg-white rounded-xl border border-slate-200 p-5 md:p-6 shadow-sm">
+                    <div class="flex justify-between items-center mb-6 border-b pb-3">
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-calendar-check text-blue-600"></i> <span id="calendar-month-title" class="text-blue-900 font-bold">개국 여정 캘린더</span>
+                        </h3>
+                    </div>
+                    <div class="calendar-grid" id="calendar-body"></div>
+                </div>
+                <div class="bg-white rounded-xl border border-slate-200 p-5 md:p-6 shadow-sm space-y-6">
+                    <h3 class="text-base font-bold text-slate-900 border-b pb-3 flex justify-between items-center">
+                        <span><i class="fa-solid fa-list-ol text-blue-600 mr-2"></i> <span id="current-focused-title" class="text-blue-900 underline decoration-blue-200">가맹점</span> 세부 타임라인</span>
+                    </h3>
+                    <div id="timeline-container" class="relative border-l-2 border-slate-200 ml-3 md:ml-4 space-y-6"></div>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div id="admin-edit-panel" class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-6">
+                    <div>
+                        <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-4 border-b pb-2">가맹점 정보 수정</h3>
+                        <div class="space-y-4 text-xs">
+                            <div class="grid grid-cols-2 gap-2">
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">약국명</label><input type="text" id="edit-input-name" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500 font-bold"></div>
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">지역</label>
+                                    <select id="edit-input-region" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500 font-bold">
+                                        <option value="서울">서울</option><option value="경기">경기</option><option value="인천">인천</option><option value="대전">대전</option><option value="광주">광주</option><option value="부산">부산</option><option value="제주">제주</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">약사명</label><input type="text" id="edit-input-pharmacist" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500 font-bold"></div>
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">담당 매니저</label><input type="text" id="edit-input-manager" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">계약일</label><input type="date" id="edit-input-contract-date" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
+                                <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">오픈예정일</label><input type="date" id="edit-input-open-date" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
+                            </div>
+                            <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">인테리어 업체/담당</label><input type="text" id="edit-input-interior" placeholder="업체명 / 담당자" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
+                            <button onclick="saveChangesToMaster()" class="w-full bg-slate-900 hover:bg-black text-white py-3 rounded-lg font-bold shadow-md">가맹점 정보 업데이트</button>
+                        </div>
+                    </div>
+
+
+                </div>
+
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-slate-200 space-y-4">
+                    <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider border-b pb-2 flex items-center gap-1">
+                        <i class="fa-solid fa-headset text-blue-600"></i> Care Support
+                    </h3>
+                    <div class="divide-y divide-slate-100 text-xs">
+                        <div class="flex justify-between py-2.5">
+                            <span class="text-slate-400 font-medium">🏢 담당부서</span>
+                            <span class="font-bold text-slate-800">약국총괄사업부 가맹기획팀</span>
+                        </div>
+                        <div class="flex justify-between py-2.5">
+                            <span class="text-slate-400 font-medium">👤 담당자</span>
+                            <span class="font-bold text-slate-800" id="display-manager-name">-</span>
+                        </div>
+                        <div class="flex justify-between py-2.5">
+                            <span class="text-slate-400 font-medium">🛠️ 인테리어 담당</span>
+                            <span class="font-bold text-slate-800" id="display-interior-info">-</span>
+                        </div>
+                    </div>
+                    <div class="pt-1">
+                        <p class="text-[11px] text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed font-medium">
+                            💡 약사님께서 단계를 진행하며 상태를 변경하시면, 가맹기획팀 담당자도 실시간 확인이 가능하기 때문에 더욱 정확한 도움을 드릴 수 있습니다.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div> <!-- /tab-admin-main -->
+
+    <!-- ====== 탭2: 가맹상담 ====== -->
+    <div id="tab-consult-main" class="space-y-6" style="display:block !important">
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b pb-3">
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-comments text-blue-600"></i> 가맹상담 관리
+                    <span class="text-xs text-blue-600 font-normal ml-1">(<span id="consult-total">0</span>건)</span>
+                </h2>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="showConsultDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200">
+                        <i class="fa-solid fa-chart-bar mr-1"></i> 상담 대시보드
+                    </button>
+                    <select id="consult-filter-step" onchange="renderConsults()" class="text-xs border rounded-lg px-3 py-2 text-slate-600">
+                        <option value="">전체 단계</option>
+                        <option value="상담신청">상담신청</option>
+                        <option value="전화상담">전화상담</option>
+                        <option value="현장상담">현장상담</option>
+                        <option value="검토중">검토중</option>
+                        <option value="리마인드">리마인드</option>
+                        <option value="가입완료">가입완료</option>
+                        <option value="취소">취소</option>
+                    </select>
+                    <input id="consult-search" type="text" placeholder="이름·연락처·지역 검색" oninput="renderConsults()" class="text-xs border rounded-lg px-3 py-2 w-40">
+                    <button onclick="openConsultModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg">
+                        <i class="fa-solid fa-plus mr-1"></i> 상담 등록
+                    </button>
+                </div>
+            </div>
+            <!-- 상담 단계 흐름 표시 -->
+            <div class="flex items-center gap-1 flex-wrap mb-4 text-[10px] font-bold">
+                <span class="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full">상담신청</span>
+                <i class="fa-solid fa-arrow-right text-slate-300 text-[9px]"></i>
+                <span class="bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">전화상담</span>
+                <i class="fa-solid fa-arrow-right text-slate-300 text-[9px]"></i>
+                <span class="bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded-full">현장상담</span>
+                <i class="fa-solid fa-arrow-right text-slate-300 text-[9px]"></i>
+                <span class="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">검토중</span>
+                <i class="fa-solid fa-arrow-right text-slate-300 text-[9px]"></i>
+                <span class="bg-sky-100 text-sky-700 px-2.5 py-1 rounded-full">리마인드</span>
+                <i class="fa-solid fa-arrow-right text-slate-300 text-[9px]"></i>
+                <span class="bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">가입완료</span>
+                <span class="mx-1 text-slate-300">/</span>
+                <span class="bg-red-100 text-red-600 px-2.5 py-1 rounded-full">취소</span>
+            </div>
+            <!-- 상태별 요약 카드 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase">전체 상담</p>
+                    <p class="text-2xl font-black text-slate-800 mt-1" id="cs-total">0</p>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-3 border border-amber-100">
+                    <p class="text-[10px] text-amber-500 font-bold uppercase">리마인드 필요</p>
+                    <p class="text-2xl font-black text-amber-600 mt-1" id="cs-remind">0</p>
+                </div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                    <p class="text-[10px] text-emerald-500 font-bold uppercase">가입완료</p>
+                    <p class="text-2xl font-black text-emerald-700 mt-1" id="cs-joined">0</p>
+                </div>
+                <div class="bg-red-50 rounded-xl p-3 border border-red-100">
+                    <p class="text-[10px] text-red-400 font-bold uppercase">취소</p>
+                    <p class="text-2xl font-black text-red-500 mt-1" id="cs-cancel">0</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto no-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[1100px] mobile-card-table">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase">
+                            <th class="p-3">상담일</th><th class="p-3">이름</th><th class="p-3">연락처</th><th class="p-3">지역</th>
+                            <th class="p-3">약국유형</th><th class="p-3">상담경로</th><th class="p-3">담당자</th><th class="p-3">현재단계</th><th class="p-3">리마인드일</th><th class="p-3">메모</th><th class="p-3 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="consult-table-body" class="text-sm divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- ====== 탭3: 가입자 관리 ====== -->
+    <div id="tab-members-main" class="space-y-6" style="display:none !important">
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b pb-3">
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-users text-blue-600"></i> 가입자 관리
+                    <span class="text-xs text-blue-600 font-normal ml-1">(<span id="member-total">0</span>명)</span>
+                </h2>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="showMemberDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200">
+                        <i class="fa-solid fa-chart-bar mr-1"></i> 가입자 대시보드
+                    </button>
+                    <select id="member-filter-payment" onchange="renderMembers()" class="text-xs border rounded-lg px-3 py-2 text-slate-600">
+                        <option value="">납입 전체</option>
+                        <option value="대기">대기 (미납)</option>
+                        <option value="계약금납부">계약금만 납부</option>
+                        <option value="분납중">분납 진행중</option>
+                        <option value="완납">완납</option>
+                        <option value="면제">면제</option>
+                    </select>
+                    <input id="member-filter-manager" type="text" placeholder="담당SV 검색" oninput="renderMembers()" class="text-xs border rounded-lg px-3 py-2 w-28">
+                    <input id="member-search" type="text" placeholder="약사·약국명 검색" oninput="renderMembers()" class="text-xs border rounded-lg px-3 py-2 w-36">
+                    <button onclick="openMemberModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg">
+                        <i class="fa-solid fa-plus mr-1"></i> 가입자 등록
+                    </button>
+                </div>
+            </div>
+            <div class="bg-blue-50 border border-blue-100 rounded-xl p-3 text-[11px] text-blue-700 font-medium mb-4">
+                <i class="fa-solid fa-circle-info mr-1"></i>
+                <strong>개설행정 진행 → 개설행정 탭 자동 연동</strong> · <strong>인테리어/익스테리어 진행 → 인익스테리어 탭 자동 연동</strong>
+            </div>
+            <div class="overflow-x-auto no-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[1200px] mobile-card-table">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase">
+                            <th class="p-3">가입일</th><th class="p-3">약사명</th><th class="p-3">약국명</th><th class="p-3">연락처</th>
+                            <th class="p-3">계약서</th><th class="p-3">입금</th><th class="p-3">개설행정</th><th class="p-3">인테리어</th><th class="p-3">익스테리어</th><th class="p-3">담당</th><th class="p-3 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="member-table-body" class="text-sm divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- ====== 탭4: 인익스테리어 ====== -->
+    <div id="tab-interior-main" class="space-y-6" style="display:none !important">
+        <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 md:p-6">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 border-b pb-3">
+                <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-paint-roller text-blue-600"></i> 인익스테리어 관리
+                </h2>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="showInteriorDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200">
+                        <i class="fa-solid fa-chart-bar mr-1"></i> 인익스테리어 대시보드
+                    </button>
+                    <select id="int-filter-type" onchange="renderInteriors()" class="text-xs border rounded-lg px-3 py-2 text-slate-600">
+                        <option value="">전체 유형</option>
+                        <option value="인테리어">인테리어</option>
+                        <option value="익스테리어">익스테리어</option>
+                        <option value="인익스테리어">인익스테리어</option>
+                    </select>
+                    <select id="int-filter-status" onchange="renderInteriors()" class="text-xs border rounded-lg px-3 py-2 text-slate-600">
+                        <option value="">전체 상태</option>
+                        <option value="실측예정">실측예정</option>
+                        <option value="시안검토">시안검토</option>
+                        <option value="견적안내">견적안내</option>
+                        <option value="진행확정">진행확정</option>
+                        <option value="계약완료">계약완료</option>
+                        <option value="시공중">시공중</option>
+                        <option value="완료">완료</option>
+                        <option value="미진행">미진행</option>
+                        <option value="장기보류">장기보류</option>
+                    </select>
+                    <input id="int-search" type="text" placeholder="약사·약국명 검색" oninput="renderInteriors()" class="text-xs border rounded-lg px-3 py-2 w-36">
+                    <button onclick="openInteriorModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-4 py-2 rounded-lg">
+                        <i class="fa-solid fa-plus mr-1"></i> 등록
+                    </button>
+                </div>
+            </div>
+            <!-- 요약 카드 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase">진행 약사수</p>
+                    <p class="text-2xl font-black text-slate-800 mt-1" id="int-count">0</p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">가입자 대비 <span id="int-rate" class="text-blue-600 font-bold">0%</span></p>
+                </div>
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-100">
+                    <p class="text-[10px] text-blue-400 font-bold uppercase">총 견적금액</p>
+                    <p class="text-xl font-black text-blue-700 mt-1" id="int-revenue">0만원</p>
+                </div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                    <p class="text-[10px] text-emerald-500 font-bold uppercase">예상 마진 합계</p>
+                    <p class="text-xl font-black text-emerald-700 mt-1" id="int-margin">0만원</p>
+                </div>
+                <div class="bg-purple-50 rounded-xl p-3 border border-purple-100">
+                    <p class="text-[10px] text-purple-400 font-bold uppercase">평균 마진율</p>
+                    <p class="text-2xl font-black text-purple-700 mt-1" id="int-margin-rate">0%</p>
+                </div>
+            </div>
+            <div class="overflow-x-auto no-scrollbar">
+                <table class="w-full text-left border-collapse min-w-[1050px] mobile-card-table">
+                    <thead>
+                        <tr class="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 font-bold uppercase">
+                            <th class="p-3">약사명</th><th class="p-3">약국명</th><th class="p-3">유형</th><th class="p-3">상태</th>
+                            <th class="p-3">협력업체</th><th class="p-3">견적금액</th><th class="p-3">마진율</th><th class="p-3">예상마진</th><th class="p-3 text-center">관리</th>
+                        </tr>
+                    </thead>
+                    <tbody id="interior-table-body" class="text-sm divide-y divide-slate-100"></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    </main><!-- /main -->
+
+    <!-- 모바일 캘린더 일정 팝업 -->
+    <div id="cal-popup-overlay" onclick="closeCalPopup()"></div>
+    <div id="cal-popup">
+        <div class="flex justify-between items-center mb-3">
+            <h4 id="cal-popup-date" class="text-sm font-black text-slate-800"></h4>
+            <button onclick="closeCalPopup()" class="text-slate-400 text-xl font-bold">✕</button>
+        </div>
+        <div id="cal-popup-content" class="space-y-2"></div>
+    </div>
+
+    <div id="register-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 md:p-8 shadow-2xl space-y-5">
+            <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-store text-blue-600 mr-2"></i>신규 가맹점 등록</h3>
+            <div class="space-y-3 text-xs">
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="text" id="modal-name" placeholder="약국명 *" class="w-full border rounded-lg p-3">
+                    <select id="modal-region" class="w-full border rounded-lg p-3"><option value="서울">서울</option><option value="경기">경기</option><option value="인천">인천</option><option value="대전">대전</option><option value="광주">광주</option><option value="부산">부산</option><option value="제주">제주</option></select>
+                </div>
+                <input type="text" id="modal-pharmacist" placeholder="약사명 *" class="w-full border rounded-lg p-3">
+                <input type="text" id="modal-manager" placeholder="담당 매니저 *" class="w-full border rounded-lg p-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">계약일</label><input type="date" id="modal-contract-date" class="w-full border rounded-lg p-3"></div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">오픈예정일 *</label><input type="date" id="modal-open-date" class="w-full border rounded-lg p-3"></div>
+                </div>
+            </div>
+            <div class="flex gap-2 pt-4"><button onclick="closeModal()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3.5 rounded-xl">취소</button><button onclick="addNewPharmacy()" class="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl">등록</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 가맹상담 등록 모달 ====== -->
+    <div id="consult-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto mobile-modal">
+            <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-comments text-blue-600 mr-2"></i>가맹상담 등록/수정</h3>
+            <input type="hidden" id="c-edit-id">
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">상담일자 *</label><input type="date" id="c-date" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">담당자</label>
+                    <input type="text" id="c-manager" placeholder="담당자명 입력" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">이름 *</label><input type="text" id="c-name" placeholder="홍길동" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">연락처</label><input type="text" id="c-phone" placeholder="010-0000-0000" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">지역</label><input type="text" id="c-region" placeholder="서울 강남" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">약국유형</label>
+                    <select id="c-pharmacy-type" class="w-full border rounded-lg p-2.5">
+                        <option value="">선택</option>
+                        <option value="뉴본">뉴본 (신규 개국)</option>
+                        <option value="리본">리본 (기존 약국)</option>
+                        <option value="양도양수">양도양수</option>
+                        <option value="미정">미정</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">상담경로</label>
+                    <select id="c-channel" class="w-full border rounded-lg p-2.5">
+                        <option>지인소개</option><option>회원소개</option><option>홈페이지</option>
+                        <option>아웃바운드</option><option>인바운드</option><option>박람회</option><option>기타</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">현재 단계 *</label>
+                    <select id="c-status" onchange="toggleRemindDate()" class="w-full border rounded-lg p-2.5">
+                        <option value="상담신청">상담신청</option>
+                        <option value="전화상담">전화상담</option>
+                        <option value="현장상담">현장상담</option>
+                        <option value="검토중">검토중</option>
+                        <option value="리마인드">리마인드</option>
+                        <option value="가입완료">가입완료</option>
+                        <option value="취소">취소</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">비교 경쟁사</label>
+                    <select id="c-competitor" class="w-full border rounded-lg p-2.5">
+                        <option value="">없음/미확인</option>
+                        <option>온누리</option><option>휴베이스</option><option>온누리+휴베이스</option><option>기타</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">평수</label><input type="text" id="c-size" placeholder="15평" class="w-full border rounded-lg p-2.5"></div>
+            </div>
+            <div id="remind-date-wrap" class="text-xs hidden">
+                <label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">리마인드 예정일</label>
+                <input type="date" id="c-remind-date" class="w-full border rounded-lg p-2.5">
+            </div>
+            <div id="cancel-reason-wrap" class="text-xs hidden">
+                <label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">미가입/취소 사유 <span class="text-red-400">*</span></label>
+                <select id="c-cancel-reason" class="w-full border rounded-lg p-2.5 mb-2">
+                    <option value="">선택</option>
+                    <option>가입비 부담</option><option>타 체인 선택 (온누리)</option><option>타 체인 선택 (휴베이스)</option>
+                    <option>개국 포기/연기</option><option>상가 계약 미확정</option><option>인익스테리어 조건 불만</option>
+                    <option>서비스 매력도 부족</option><option>연락두절</option><option>기타</option>
+                </select>
+                <input type="text" id="c-cancel-detail" placeholder="상세 사유 (직접 입력)" class="w-full border rounded-lg p-2.5">
+            </div>
+            <div id="join-reason-wrap" class="text-xs hidden">
+                <label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">가입 결정 이유 <span class="text-emerald-500">*</span></label>
+                <div class="grid grid-cols-2 gap-2 mb-2">
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="개설행정 지원"> 개설행정 지원</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="인익스테리어"> 인익스테리어</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="금융 혜택"> 금융 혜택</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="PB제품"> PB제품</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="AI 플랫폼"> AI 플랫폼</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="VMD/매출 상승"> VMD/매출 상승</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="지인 소개"> 지인 소개</label>
+                    <label class="flex items-center gap-1.5 text-[11px] cursor-pointer"><input type="checkbox" class="join-reason-cb" value="가입비 조건 협의"> 가입비 조건 협의</label>
+                </div>
+                <input type="text" id="c-join-reason-etc" placeholder="기타 가입 이유 (직접 입력)" class="w-full border rounded-lg p-2.5">
+            </div>
+            <div class="text-xs">
+                <label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">상담내용 메모 (가입목적, 니즈, 특이사항 등)</label>
+                <textarea id="c-memo" rows="3" placeholder="상담내용, 가입 이유, 취소 이유, 리마인드 일정 등 자유롭게 기입" class="w-full border rounded-lg p-2.5 resize-none"></textarea>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeConsultModal()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-xl text-sm">취소</button>
+                <button onclick="saveConsult(false)" id="btn-save-only" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm">저장</button>
+                <button onclick="saveConsult(true)" id="btn-join-from-consult" class="flex-1 bg-emerald-600 text-white font-bold py-3 rounded-xl text-sm hidden">저장 + 가입자 등록</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== 가입자 등록 모달 ====== -->
+    <div id="member-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto mobile-modal">
+            <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-user-plus text-blue-600 mr-2"></i>가입자 등록/수정</h3>
+            <input type="hidden" id="m-edit-id">
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">가입일자 *</label><input type="date" id="m-date" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">약사명 *</label><input type="text" id="m-name" placeholder="홍길동" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">약국명 <span class="text-slate-300">(선택)</span></label><input type="text" id="m-pharmacy" placeholder="행복약국 (선택)" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">연락처</label><input type="text" id="m-phone" placeholder="010-0000-0000" class="w-full border rounded-lg p-2.5"></div>
+                <div class="col-span-2"><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">주소 <span class="text-slate-300">(선택)</span></label><input type="text" id="m-address" placeholder="예: 서울시 강남구 테헤란로 123" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">뉴본/리본</label>
+                    <select id="m-newborn" class="w-full border rounded-lg p-2.5 bg-white">
+                        <option value="">선택</option><option value="뉴본">뉴본 (신규 개국)</option>
+                        <option value="리본">리본 (기존 약국)</option><option value="양도양수">양도양수</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">회원등급</label>
+                    <select id="m-grade" class="w-full border rounded-lg p-2.5 bg-white">
+                        <option value="정회원">정회원</option><option value="준회원">준회원</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">담당 SV</label><input type="text" id="m-manager" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">평수</label><input type="text" id="m-size" placeholder="15평" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">계약서 상태</label>
+                    <select id="m-contract" class="w-full border rounded-lg p-2.5"><option>작성전</option><option>작성완료</option></select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">가입비 납입 상태</label>
+                    <select id="m-payment" onchange="togglePaymentRemind()" class="w-full border rounded-lg p-2.5">
+                        <option value="대기">대기 (미납)</option>
+                        <option value="계약금납부">계약금만 납부</option>
+                        <option value="분납중">분납 진행중</option>
+                        <option value="완납">완납</option>
+                        <option value="면제">면제</option>
+                    </select>
+                </div>
+                <div class="col-span-2"><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">주 처방과</label><input type="text" id="m-prescription" placeholder="내과, 소아청소년과 등" class="w-full border rounded-lg p-2.5"></div>
+            </div>
+            <!-- 분납 리마인드 -->
+            <div id="payment-remind-wrap" class="bg-amber-50 rounded-xl p-3 border border-amber-100 space-y-2 text-xs hidden">
+                <p class="text-[10px] font-bold text-amber-600 uppercase"><i class="fa-solid fa-bell mr-1"></i>납입 리마인드</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">납입 예정일</label><input type="date" id="m-payment-due" class="w-full border rounded-lg p-2 bg-white"></div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">잔여 납입금액 (만원)</label><input type="number" id="m-payment-remain" placeholder="0" class="w-full border rounded-lg p-2 bg-white"></div>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1">납입 메모</label><input type="text" id="m-payment-memo" placeholder="예: 2차 분납 300만 - 6월 30일까지" class="w-full border rounded-lg p-2 bg-white"></div>
+            </div>
+            <!-- 연동 설정 -->
+            <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 space-y-3 text-xs">
+                <p class="text-[10px] font-bold text-slate-500 uppercase">연동 설정 <span class="text-blue-500 font-normal ml-1">— 진행 선택 시 해당 탭으로 자동 등록됩니다</span></p>
+                <div class="grid grid-cols-3 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">개설행정</label>
+                        <select id="m-admin-yn" class="w-full border rounded-lg p-2.5 bg-white">
+                            <option value="미진행">미진행</option><option value="진행">진행</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">인테리어</label>
+                        <select id="m-interior-yn" class="w-full border rounded-lg p-2.5 bg-white">
+                            <option value="미진행">미진행</option><option value="진행">진행</option>
+                        </select>
+                    </div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">익스테리어</label>
+                        <select id="m-exterior-yn" class="w-full border rounded-lg p-2.5 bg-white">
+                            <option value="미진행">미진행</option><option value="진행">진행</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="text-xs"><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">메모 / 히스토리</label><textarea id="m-memo" rows="2" class="w-full border rounded-lg p-2.5 resize-none" placeholder="특이사항, 가입 경위, 협의 사항 등"></textarea></div>
+            <div class="flex gap-2"><button onclick="closeMemberModal()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-xl text-sm">취소</button><button onclick="saveMember()" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm">저장</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 인익스테리어 등록 모달 ====== -->
+    <div id="interior-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto mobile-modal">
+            <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-paint-roller text-blue-600 mr-2"></i>인익스테리어 등록/수정</h3>
+            <input type="hidden" id="i-edit-id">
+            <div class="grid grid-cols-2 gap-3 text-xs">
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">약사명 *</label><input type="text" id="i-name" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">약국명</label><input type="text" id="i-pharmacy" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">진행 유형 *</label>
+                    <select id="i-type" onchange="updateInteriorFields()" class="w-full border rounded-lg p-2.5">
+                        <option value="인테리어">인테리어</option>
+                        <option value="익스테리어">익스테리어</option>
+                        <option value="인익스테리어">인익스테리어</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">현재 상태</label>
+                    <select id="i-status" onchange="toggleLongtermWrap()" class="w-full border rounded-lg p-2.5">
+                        <option value="실측예정">실측예정</option><option value="시안검토">시안검토</option>
+                        <option value="견적안내">견적안내</option><option value="진행확정">진행확정</option>
+                        <option value="계약완료">계약완료</option><option value="시공중">시공중</option>
+                        <option value="완료">완료</option><option value="미진행">미진행</option>
+                        <option value="장기보류">장기보류</option>
+                    </select>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">협력업체</label>
+                    <input type="text" id="i-partner" placeholder="업체명 직접 입력" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">담당자</label><input type="text" id="i-partner-manager" placeholder="담당자명" class="w-full border rounded-lg p-2.5"></div>
+            </div>
+
+            <!-- 인테리어만 -->
+            <div id="interior-only-fields" class="bg-teal-50 rounded-xl p-3 border border-teal-100 space-y-2 text-xs">
+                <p class="text-[10px] font-bold text-teal-700 uppercase"><i class="fa-solid fa-paint-roller mr-1"></i>인테리어 견적</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">인테리어 견적금액 (만원)</label><input type="number" id="i-int-estimate" placeholder="0" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">인테리어 마진율 (%)</label><input type="number" id="i-int-margin-rate" placeholder="예: 30" min="0" max="100" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                </div>
+                <div class="bg-white rounded-lg p-2 border border-teal-200 flex justify-between items-center">
+                    <span class="text-[10px] text-slate-500 font-bold">인테리어 예상마진</span>
+                    <span class="font-black text-teal-700" id="i-int-margin-result">-</span>
+                </div>
+            </div>
+
+            <!-- 익스테리어만 -->
+            <div id="exterior-only-fields" class="bg-orange-50 rounded-xl p-3 border border-orange-100 space-y-2 text-xs hidden">
+                <p class="text-[10px] font-bold text-orange-700 uppercase"><i class="fa-solid fa-sign-hanging mr-1"></i>익스테리어 견적</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">익스테리어 견적금액 (만원)</label><input type="number" id="i-ext-estimate" placeholder="0" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">익스테리어 마진율 (%)</label><input type="number" id="i-ext-margin-rate" placeholder="예: 30" min="0" max="100" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                </div>
+                <div class="bg-white rounded-lg p-2 border border-orange-200 flex justify-between items-center">
+                    <span class="text-[10px] text-slate-500 font-bold">익스테리어 예상마진</span>
+                    <span class="font-black text-orange-700" id="i-ext-margin-result">-</span>
+                </div>
+            </div>
+
+            <!-- 인익스테리어 둘다 -->
+            <div id="both-fields" class="space-y-2 hidden text-xs">
+                <div class="bg-teal-50 rounded-xl p-3 border border-teal-100 space-y-2">
+                    <p class="text-[10px] font-bold text-teal-700 uppercase"><i class="fa-solid fa-paint-roller mr-1"></i>인테리어 견적</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">견적금액 (만원)</label><input type="number" id="i-both-int-estimate" placeholder="0" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                        <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">마진율 (%)</label><input type="number" id="i-both-int-rate" placeholder="예: 30" min="0" max="100" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                    </div>
+                    <div class="bg-white rounded-lg p-2 border border-teal-200 flex justify-between">
+                        <span class="text-[10px] text-slate-500 font-bold">인테리어 예상마진</span>
+                        <span class="font-black text-teal-700" id="i-both-int-result">-</span>
+                    </div>
+                </div>
+                <div class="bg-orange-50 rounded-xl p-3 border border-orange-100 space-y-2">
+                    <p class="text-[10px] font-bold text-orange-700 uppercase"><i class="fa-solid fa-sign-hanging mr-1"></i>익스테리어 견적</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">견적금액 (만원)</label><input type="number" id="i-both-ext-estimate" placeholder="0" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                        <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">마진율 (%)</label><input type="number" id="i-both-ext-rate" placeholder="예: 30" min="0" max="100" oninput="calcAllMargin()" class="w-full border rounded-lg p-2.5 bg-white"></div>
+                    </div>
+                    <div class="bg-white rounded-lg p-2 border border-orange-200 flex justify-between">
+                        <span class="text-[10px] text-slate-500 font-bold">익스테리어 예상마진</span>
+                        <span class="font-black text-orange-700" id="i-both-ext-result">-</span>
+                    </div>
+                </div>
+                <div class="bg-pink-50 rounded-xl p-2 border border-pink-200 flex justify-between items-center">
+                    <span class="text-[10px] text-slate-600 font-bold">통합 예상마진 합계</span>
+                    <span class="font-black text-pink-700 text-sm" id="i-total-result">-</span>
+                </div>
+            </div>
+            <!-- 장기보류 리마인드 -->
+            <div id="i-longterm-wrap" class="bg-sky-50 rounded-xl p-3 border border-sky-100 space-y-2 text-xs hidden">
+                <p class="text-[10px] font-bold text-sky-600 uppercase"><i class="fa-solid fa-clock mr-1"></i>장기 대상처 관리</p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">예상 진행 시점</label><input type="text" id="i-expected-date" placeholder="예: 2026년 하반기" class="w-full border rounded-lg p-2 bg-white"></div>
+                    <div><label class="block text-[9px] text-slate-400 font-bold mb-1">리마인드 예정일</label><input type="date" id="i-remind-date" class="w-full border rounded-lg p-2 bg-white"></div>
+                </div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1">보류 사유</label><input type="text" id="i-longterm-reason" placeholder="예: 상가 계약 대기, 자금 마련 중" class="w-full border rounded-lg p-2 bg-white"></div>
+            </div>
+            <!-- 미진행(드랍) 이유 -->
+            <div id="i-drop-wrap" class="bg-red-50 rounded-xl p-3 border border-red-100 space-y-2 text-xs hidden">
+                <p class="text-[10px] font-bold text-red-600 uppercase"><i class="fa-solid fa-circle-xmark mr-1"></i>미진행 사유</p>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1">미진행 이유</label>
+                    <select id="i-drop-reason" class="w-full border rounded-lg p-2 bg-white mb-2">
+                        <option value="">선택</option>
+                        <option>견적 금액 부담</option>
+                        <option>타 업체 선정</option>
+                        <option>진행 의사 철회</option>
+                        <option>예산 부족</option>
+                        <option>시공 시기 미정</option>
+                        <option>기타</option>
+                    </select>
+                    <input type="text" id="i-drop-detail" placeholder="상세 사유 (직접 입력)" class="w-full border rounded-lg p-2 bg-white">
+                </div>
+            </div>
+            <div class="text-xs"><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">메모 (시안 URL, 특이사항 등)</label><textarea id="i-memo" rows="2" class="w-full border rounded-lg p-2.5 resize-none"></textarea></div>
+            <div class="flex gap-2"><button onclick="closeInteriorModal()" class="flex-1 bg-slate-100 text-slate-700 font-bold py-3 rounded-xl text-sm">취소</button><button onclick="saveInterior()" class="flex-1 bg-blue-600 text-white font-bold py-3 rounded-xl text-sm">저장</button></div>
+        </div>
+    </div>
+
+    <!-- ====== 보고용 대시보드 모달 ====== -->
+    <div id="admin-dashboard-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-chart-bar text-blue-600 mr-2"></i><span class="modal-title-text">개설행정 보고용 대시보드</span></h3>
+                <button onclick="closeAdminDashboard()" class="text-slate-400 text-xl font-bold">✕</button>
+            </div>
+            <div id="dashboard-content"></div>
+        </div>
+    </div>
+
+    <!-- ====== 완료 약국 목록 모달 ====== -->
+    <div id="completed-modal" class="fixed inset-0 z-50 bg-black/60 items-center justify-center p-4 backdrop-blur-sm" style="display:none">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="text-base font-bold text-slate-900"><i class="fa-solid fa-box-archive text-slate-600 mr-2"></i>개국 완료 약국 목록</h3>
+                <button onclick="document.getElementById('completed-modal').style.display='none';" class="text-slate-400 text-xl font-bold">✕</button>
+            </div>
+            <div id="completed-list-content" class="overflow-x-auto"></div>
+        </div>
+    </div>
+
+
+    <script>
+        // ══ 탭 전환 (최상단 정의) ══
+        function switchMainTab(tabId) {
+            var ids = ['tab-admin-main','tab-consult-main','tab-members-main','tab-interior-main'];
+            for (var k = 0; k < ids.length; k++) {
+                var el = document.getElementById(ids[k]);
+                if (el) el.style.cssText = 'display:none !important';
+            }
+            var target = document.getElementById(tabId);
+            if (target) {
+                target.style.cssText = 'display:block !important';
+                void target.offsetHeight;
+            }
+            var navMap = {'tab-admin-main':'nav-admin','tab-consult-main':'nav-consult','tab-members-main':'nav-members','tab-interior-main':'nav-interior'};
+            var btns = document.querySelectorAll('.main-tab-btn');
+            for (var b = 0; b < btns.length; b++) btns[b].classList.remove('active-tab');
+            var btn = document.getElementById(navMap[tabId]);
+            if (btn) btn.classList.add('active-tab');
+        }
+        // ── 탭 전환 ──
+
+        // ── 배지 ──
+        function sBadge(s) {
+            const m = {
+                '상담신청':'bg-slate-100 text-slate-600','전화상담':'bg-blue-100 text-blue-700','현장상담':'bg-indigo-100 text-indigo-700',
+                '검토중':'bg-amber-100 text-amber-700','리마인드':'bg-sky-100 text-sky-700',
+                '가입완료':'bg-emerald-100 text-emerald-700','취소':'bg-red-100 text-red-600',
+                '작성전':'bg-slate-100 text-slate-500','작성완료':'bg-purple-100 text-purple-700',
+                '대기':'bg-slate-100 text-slate-400','완납':'bg-emerald-100 text-emerald-700',
+                '계약금납부':'bg-amber-100 text-amber-700','분납중':'bg-blue-100 text-blue-700','면제':'bg-purple-100 text-purple-600',
+                '미진행':'bg-slate-100 text-slate-400','진행':'bg-blue-100 text-blue-700',
+                '실측예정':'bg-slate-100 text-slate-600','시안검토':'bg-amber-100 text-amber-700',
+                '견적안내':'bg-yellow-100 text-yellow-700','진행확정':'bg-indigo-100 text-indigo-700',
+                '계약완료':'bg-blue-100 text-blue-700','시공중':'bg-purple-100 text-purple-700',
+                '완료':'bg-emerald-100 text-emerald-700','미진행':'bg-red-100 text-red-600','장기보류':'bg-sky-100 text-sky-700',
+                '인테리어':'bg-teal-100 text-teal-700','익스테리어':'bg-orange-100 text-orange-700','인익스테리어':'bg-pink-100 text-pink-700',
+            };
+            return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${m[s]||'bg-slate-100 text-slate-500'}">${s||'-'}</span>`;
+        }
+
+        // ── 가입비 납입 리마인드 토글 ──
+        function togglePaymentRemind() {
+            const v = document.getElementById('m-payment')?.value;
+            const wrap = document.getElementById('payment-remind-wrap');
+            if (wrap) wrap.classList.toggle('hidden', v !== '계약금납부' && v !== '분납중');
+        }
+
+        // ── 인익스테리어 장기보류/미진행 토글 ──
+        function toggleLongtermWrap() {
+            const v = document.getElementById('i-status')?.value;
+            const longtermWrap = document.getElementById('i-longterm-wrap');
+            const dropWrap = document.getElementById('i-drop-wrap');
+            if (longtermWrap) longtermWrap.classList.toggle('hidden', v !== '장기보류');
+            if (dropWrap) dropWrap.classList.toggle('hidden', v !== '미진행');
+        }
+
+        // ══════════════════════════════
+        //  개설행정 - 완료 약국 숨김 / 대시보드
+        // ══════════════════════════════
+        let showCompleted = false;
+
+        function isExpired(p) {
+            const prog = calculateProgress(p.id);
+            if (prog < 100) return false;
+            const today = new Date(); today.setHours(0,0,0,0);
+            const open = new Date(p.openDate); open.setHours(0,0,0,0);
+            const diff = Math.floor((today - open) / 86400000);
+            return diff >= 3;
+        }
+
+        function toggleCompletedList() {
+            const list = (window.masterPharmacies || []).filter(p => isExpired(p));
+            const modal = document.getElementById('completed-modal');
+            const content = document.getElementById('completed-list-content');
+            if (list.length === 0) { alert('개국 완료 후 3일이 지난 약국이 없습니다.'); return; }
+            content.innerHTML = `<table class="w-full text-left border-collapse min-w-[600px] text-sm">
+                <thead><tr class="bg-slate-50 border-b text-[11px] text-slate-500 font-bold uppercase">
+                    <th class="p-3">약국명</th><th class="p-3">약사명</th><th class="p-3">지역</th><th class="p-3">계약일</th><th class="p-3">개국일</th><th class="p-3">담당자</th>
+                </tr></thead>
+                <tbody class="divide-y divide-slate-100">
+                ${list.map(p => `<tr class="hover:bg-slate-50">
+                    <td class="p-3 font-bold">${p.name}</td><td class="p-3">${p.pharmacist}</td><td class="p-3 text-emerald-600">${p.region}</td>
+                    <td class="p-3 text-[11px]">${p.contractDate||'-'}</td><td class="p-3 font-bold">${p.openDate}</td><td class="p-3">${p.manager||'-'}</td>
+                </tr>`).join('')}
+                </tbody></table>`;
+            modal.style.display='flex';
+        }
+
+        function showAdminDashboard() {
+            const all = window.masterPharmacies || [];
+            const tl = window.timelineMap || {};
+            const today = new Date(); today.setHours(0,0,0,0);
+            const thisMonth = today.getMonth(); const thisYear = today.getFullYear();
+
+            const activeList = all.filter(p => !isExpired(p));
+            const completedList = all.filter(p => isExpired(p));
+
+            // 월별 집계
+            const monthlyData = {};
+            all.forEach(p => {
+                const d = new Date(p.openDate);
+                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                if (!monthlyData[key]) monthlyData[key] = { inProgress: 0, completed: 0 };
+                if (isExpired(p)) monthlyData[key].completed++;
+                else monthlyData[key].inProgress++;
+            });
+            const sortedMonths = Object.keys(monthlyData).sort().slice(-6);
+
+            // 진행 중 약국 단계 분포
+            const stepCount = {};
+            activeList.forEach(p => {
+                const steps = tl[p.id] || [];
+                const prog = calculateProgress(p.id);
+                const label = prog === 0 ? '시작전' : prog < 40 ? '초기(0~40%)' : prog < 70 ? '중반(40~70%)' : prog < 100 ? '후반(70~99%)' : '완료대기';
+                stepCount[label] = (stepCount[label]||0)+1;
+            });
+
+            const content = document.getElementById('dashboard-content');
+            content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center">
+                    <p class="text-[10px] text-blue-400 font-bold uppercase">전체 누적</p>
+                    <p class="text-3xl font-black text-blue-700">${all.length}</p>
+                    <p class="text-[10px] text-slate-400">개처</p>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-3 border border-amber-100 text-center">
+                    <p class="text-[10px] text-amber-500 font-bold uppercase">진행 중</p>
+                    <p class="text-3xl font-black text-amber-600">${activeList.length}</p>
+                    <p class="text-[10px] text-slate-400">개처</p>
+                </div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center">
+                    <p class="text-[10px] text-emerald-500 font-bold uppercase">개국 완료</p>
+                    <p class="text-3xl font-black text-emerald-700">${completedList.length}</p>
+                    <p class="text-[10px] text-slate-400">개처</p>
+                </div>
+                <div class="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center">
+                    <p class="text-[10px] text-purple-400 font-bold uppercase">완료율</p>
+                    <p class="text-3xl font-black text-purple-700">${all.length>0?Math.round(completedList.length/all.length*100):0}%</p>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-blue-500 mr-1"></i>월별 현황 (최근 6개월)</p>
+                <table class="w-full text-xs border-collapse">
+                    <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
+                        <th class="p-2 text-left">월</th><th class="p-2 text-center">진행중</th><th class="p-2 text-center">완료</th><th class="p-2 text-center">합계</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                    ${sortedMonths.map(m => `<tr class="${m===`${thisYear}-${String(thisMonth+1).padStart(2,'0')}` ? 'bg-blue-50 font-bold':''} hover:bg-slate-50">
+                        <td class="p-2">${m}</td>
+                        <td class="p-2 text-center text-amber-600">${monthlyData[m].inProgress}</td>
+                        <td class="p-2 text-center text-emerald-600">${monthlyData[m].completed}</td>
+                        <td class="p-2 text-center">${monthlyData[m].inProgress+monthlyData[m].completed}</td>
+                    </tr>`).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div>
+                <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-layer-group text-indigo-500 mr-1"></i>현재 진행중 약국 — 단계별 분포</p>
+                <div class="space-y-2">
+                ${Object.entries(stepCount).map(([k,v]) => `
+                    <div class="flex items-center gap-3">
+                        <span class="text-[11px] w-24 text-slate-500 font-medium">${k}</span>
+                        <div class="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+                            <div class="bg-blue-500 h-full rounded-full transition-all" style="width:${activeList.length>0?Math.round(v/activeList.length*100):0}%"></div>
+                        </div>
+                        <span class="text-[11px] font-bold text-slate-700 w-8 text-right">${v}개</span>
+                    </div>`).join('')}
+                </div>
+            </div>`;
+
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+        }
+        function closeAdminDashboard() {
+            document.getElementById('admin-dashboard-modal').style.display='none';
+        }
+
+        // ── 신규 약국 등록 (개설행정 탭 내) ──
+        function addNewPharmacyFromMember() { openModal(); }
+
+        // ── 가맹상담 대시보드 ──
+        function showConsultDashboard() {
+            const list = window.consultList || [];
+            const channels = {}; const steps = {}; const cancelReasons = {}; const joinReasonMap = {};
+            list.forEach(r => {
+                channels[r.channel||'미상'] = (channels[r.channel||'미상']||0)+1;
+                steps[r.status||'미상'] = (steps[r.status||'미상']||0)+1;
+                if(r.status==='취소'&&(r.cancelReason||r.cancelDetail)){
+                    const k=r.cancelDetail||r.cancelReason||'미상';
+                    cancelReasons[r.cancelReason||'기타'] = (cancelReasons[r.cancelReason||'기타']||0)+1;
+                }
+                if(r.status==='가입완료'&&r.joinReasons&&r.joinReasons.length){
+                    r.joinReasons.forEach(j=>{ joinReasonMap[j]=(joinReasonMap[j]||0)+1; });
+                }
+            });
+            const joined = list.filter(r=>r.status==='가입완료');
+            const cancelled = list.filter(r=>r.status==='취소');
+            const content = document.getElementById('dashboard-content');
+            content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-slate-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-slate-400 font-bold">총 상담</p><p class="text-3xl font-black text-slate-700">${list.length}</p></div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">가입완료</p><p class="text-3xl font-black text-emerald-700">${joined.length}</p><p class="text-[10px] text-slate-400">전환율 ${list.length>0?Math.round(joined.length/list.length*100):0}%</p></div>
+                <div class="bg-amber-50 rounded-xl p-3 border border-amber-100 text-center"><p class="text-[10px] text-amber-500 font-bold">리마인드</p><p class="text-3xl font-black text-amber-600">${list.filter(r=>r.status==='리마인드').length}</p></div>
+                <div class="bg-red-50 rounded-xl p-3 border border-red-100 text-center"><p class="text-[10px] text-red-400 font-bold">취소</p><p class="text-3xl font-black text-red-500">${cancelled.length}</p><p class="text-[10px] text-slate-400">취소율 ${list.length>0?Math.round(cancelled.length/list.length*100):0}%</p></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100">
+                    <p class="text-xs font-bold text-emerald-700 mb-2"><i class="fa-solid fa-circle-check mr-1"></i>가입 결정 이유 TOP</p>
+                    ${Object.keys(joinReasonMap).length===0?'<p class="text-[11px] text-slate-400">데이터 없음</p>':
+                    '<div class="space-y-1">'+Object.entries(joinReasonMap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`
+                    <div class="flex items-center gap-2 text-xs"><span class="flex-1 text-slate-600 truncate">${k}</span>
+                    <div class="w-16 bg-white rounded-full h-2 overflow-hidden border border-emerald-200"><div class="bg-emerald-400 h-full rounded-full" style="width:${joined.length>0?Math.round(v/joined.length*100):0}%"></div></div>
+                    <span class="font-bold text-emerald-700 w-6 text-right">${v}</span></div>`).join('')+'</div>'}
+                </div>
+                <div class="bg-red-50 rounded-xl p-3 border border-red-100">
+                    <p class="text-xs font-bold text-red-600 mb-2"><i class="fa-solid fa-circle-xmark mr-1"></i>미가입/취소 이유 TOP</p>
+                    ${Object.keys(cancelReasons).length===0?'<p class="text-[11px] text-slate-400">데이터 없음</p>':
+                    '<div class="space-y-1">'+Object.entries(cancelReasons).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>`
+                    <div class="flex items-center gap-2 text-xs"><span class="flex-1 text-slate-600 truncate">${k}</span>
+                    <div class="w-16 bg-white rounded-full h-2 overflow-hidden border border-red-200"><div class="bg-red-400 h-full rounded-full" style="width:${cancelled.length>0?Math.round(v/cancelled.length*100):0}%"></div></div>
+                    <span class="font-bold text-red-600 w-6 text-right">${v}</span></div>`).join('')+'</div>'}
+                </div>
+            </div>
+            <div class="mb-4">
+                <p class="text-xs font-bold text-slate-700 mb-2">상담경로 분석</p>
+                <div class="space-y-1.5">${Object.entries(channels).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+                <div class="flex items-center gap-2 text-xs"><span class="w-24 text-slate-500 truncate">${k}</span>
+                <div class="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden"><div class="bg-blue-400 h-full rounded-full" style="width:${list.length>0?Math.round(v/list.length*100):0}%"></div></div>
+                <span class="font-bold text-slate-700 w-8 text-right">${v}건</span></div>`).join('')}
+                </div>
+            </div>
+            <div>
+                <p class="text-xs font-bold text-slate-700 mb-2">단계별 현황</p>
+                <div class="space-y-1.5">${Object.entries(steps).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+                <div class="flex items-center gap-2 text-xs"><span class="w-24 text-slate-500 truncate">${k}</span>
+                <div class="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden"><div class="bg-indigo-400 h-full rounded-full" style="width:${list.length>0?Math.round(v/list.length*100):0}%"></div></div>
+                <span class="font-bold text-slate-700 w-8 text-right">${v}건</span></div>`).join('')}
+                </div>
+            </div>`;
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+            document.querySelector('#admin-dashboard-modal .modal-title-text').textContent = '가맹상담 대시보드';
+        }
+
+        // ── 가입자 대시보드 ──
+        function showMemberDashboard() {
+            const list = window.memberList || [];
+            const grades = {}; const svs = {}; const newborns = {};
+            list.forEach(r => {
+                grades[r.grade||'미상'] = (grades[r.grade||'미상']||0)+1;
+                svs[r.manager||'미상'] = (svs[r.manager||'미상']||0)+1;
+                newborns[r.newborn||'미상'] = (newborns[r.newborn||'미상']||0)+1;
+            });
+            const paidCount = list.filter(r=>r.payment==='완납'||r.payment==='완료').length;
+            const content = document.getElementById('dashboard-content');
+            content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-slate-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-slate-400 font-bold">총 가입자</p><p class="text-3xl font-black text-slate-700">${list.length}</p></div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">입금 완납</p><p class="text-3xl font-black text-emerald-700">${paidCount}</p></div>
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center"><p class="text-[10px] text-blue-400 font-bold">개설행정 연동</p><p class="text-3xl font-black text-blue-700">${list.filter(r=>r.adminYn==='진행').length}</p></div>
+                <div class="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center"><p class="text-[10px] text-purple-400 font-bold">인익스 연동</p><p class="text-3xl font-black text-purple-700">${list.filter(r=>r.interiorYn==='진행'||r.exteriorYn==='진행').length}</p></div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div><p class="text-xs font-bold text-slate-700 mb-2">회원등급</p><div class="space-y-1">${Object.entries(grades).map(([k,v])=>`<div class="flex justify-between text-xs border-b py-1"><span class="text-slate-500">${k}</span><span class="font-bold">${v}명</span></div>`).join('')}</div></div>
+                <div><p class="text-xs font-bold text-slate-700 mb-2">뉴본/리본</p><div class="space-y-1">${Object.entries(newborns).map(([k,v])=>`<div class="flex justify-between text-xs border-b py-1"><span class="text-slate-500">${k}</span><span class="font-bold">${v}명</span></div>`).join('')}</div></div>
+                <div class="col-span-2"><p class="text-xs font-bold text-slate-700 mb-2">담당 SV별</p><div class="space-y-1">${Object.entries(svs).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="flex items-center gap-2 text-xs"><span class="w-20 text-slate-500 truncate">${k}</span><div class="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden"><div class="bg-emerald-400 h-full rounded-full" style="width:${list.length>0?Math.round(v/list.length*100):0}%"></div></div><span class="font-bold w-8 text-right">${v}</span></div>`).join('')}</div></div>
+            </div>`;
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+            document.querySelector('#admin-dashboard-modal .modal-title-text').textContent = '가입자 대시보드';
+        }
+
+        // ── 인익스테리어 대시보드 ──
+        function showInteriorDashboard() {
+            const list = window.interiorList || [];
+            const members = window.memberList || [];
+            const byType = {}; const byStatus = {};
+            const byPartner = {}; // { 업체명: { total, success, drop, revenue, margin } }
+            let totalIntEst=0, totalExtEst=0, totalMargin=0;
+            const activeList = list.filter(r=>r.status!=='미진행'&&r.status!=='장기보류');
+            const dropList = list.filter(r=>r.status==='미진행');
+            const longtermList = list.filter(r=>r.status==='장기보류');
+            const successList = list.filter(r=>r.status==='완료');
+
+            list.forEach(r => {
+                byType[r.type||'미상'] = (byType[r.type||'미상']||0)+1;
+                byStatus[r.status||'미상'] = (byStatus[r.status||'미상']||0)+1;
+                const p = r.partner||'미상';
+                if(!byPartner[p]) byPartner[p]={total:0,success:0,drop:0,revenue:0,margin:0};
+                byPartner[p].total++;
+                if(r.status==='완료') byPartner[p].success++;
+                if(r.status==='미진행') byPartner[p].drop++;
+                const iE=parseFloat(r.intEstimate||0), iR=parseFloat(r.intMarginRate||r.marginRate||0)/100;
+                const eE=parseFloat(r.extEstimate||0), eR=parseFloat(r.extMarginRate||r.marginRate||0)/100;
+                if(r.status!=='미진행'&&r.status!=='장기보류'){
+                    byPartner[p].revenue += iE+eE;
+                    byPartner[p].margin += Math.round(iE*iR)+Math.round(eE*eR);
+                    totalIntEst+=iE; totalExtEst+=eE;
+                    totalMargin+=Math.round(iE*iR)+Math.round(eE*eR);
+                }
+            });
+            const intRate = members.length>0 ? Math.round(list.length/members.length*100) : 0;
+            const content = document.getElementById('dashboard-content');
+            content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-slate-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-slate-400 font-bold">전체 요청</p><p class="text-2xl font-black text-slate-700">${list.length}</p><p class="text-[10px] text-slate-400">가입자 대비 ${intRate}%</p></div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">완료</p><p class="text-2xl font-black text-emerald-700">${successList.length}</p><p class="text-[10px] text-slate-400">성사율 ${list.length>0?Math.round(successList.length/list.length*100):0}%</p></div>
+                <div class="bg-red-50 rounded-xl p-3 border border-red-100 text-center"><p class="text-[10px] text-red-400 font-bold">미진행 (드랍)</p><p class="text-2xl font-black text-red-500">${dropList.length}</p><p class="text-[10px] text-slate-400">미진행율 ${list.length>0?Math.round(dropList.length/list.length*100):0}%</p></div>
+                <div class="bg-sky-50 rounded-xl p-3 border border-sky-100 text-center"><p class="text-[10px] text-sky-500 font-bold">장기보류</p><p class="text-2xl font-black text-sky-600">${longtermList.length}</p><p class="text-[10px] text-slate-400">리마인드 필요</p></div>
+            </div>
+            <div class="bg-gradient-to-r from-teal-50 to-orange-50 rounded-xl p-3 border mb-4">
+                <p class="text-xs font-bold text-slate-700 mb-2">진행 중 수익 현황</p>
+                <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div><p class="text-[10px] text-teal-600 font-bold">인테리어 견적</p><p class="font-black text-teal-700">${totalIntEst.toLocaleString()}만</p></div>
+                    <div><p class="text-[10px] text-orange-600 font-bold">익스테리어 견적</p><p class="font-black text-orange-700">${totalExtEst.toLocaleString()}만</p></div>
+                    <div><p class="text-[10px] text-emerald-600 font-bold">예상마진</p><p class="font-black text-emerald-700">${totalMargin.toLocaleString()}만</p></div>
+                </div>
+            </div>
+            <div class="mb-4">
+                <p class="text-xs font-bold text-slate-700 mb-2">협력업체별 성과</p>
+                <div class="overflow-x-auto"><table class="w-full text-xs border-collapse">
+                    <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
+                        <th class="p-2 text-left">업체명</th><th class="p-2 text-center">총 의뢰</th><th class="p-2 text-center">완료</th><th class="p-2 text-center">미진행</th><th class="p-2 text-center">성사율</th><th class="p-2 text-right">매출기여</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                    ${Object.entries(byPartner).sort((a,b)=>b[1].total-a[1].total).map(([k,v])=>`<tr class="hover:bg-slate-50">
+                        <td class="p-2 font-bold">${k}</td>
+                        <td class="p-2 text-center">${v.total}</td>
+                        <td class="p-2 text-center text-emerald-600 font-bold">${v.success}</td>
+                        <td class="p-2 text-center text-red-500">${v.drop}</td>
+                        <td class="p-2 text-center">${v.total>0?Math.round(v.success/v.total*100):0}%</td>
+                        <td class="p-2 text-right font-bold text-blue-600">${v.revenue.toLocaleString()}만</td>
+                    </tr>`).join('')}
+                    </tbody>
+                </table></div>
+            </div>
+            ${longtermList.length>0?`<div>
+                <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-clock text-sky-500 mr-1"></i>장기보류 리마인드 대상</p>
+                <div class="space-y-1">${longtermList.map(r=>`<div class="flex justify-between items-center text-xs bg-sky-50 rounded-lg p-2 border border-sky-100">
+                    <span class="font-bold">${r.name} (${r.pharmacy||'-'})</span>
+                    <span class="text-slate-500">${r.expectedDate||'일정미정'}</span>
+                    <span class="text-sky-600 font-bold">${r.remindDate||'리마인드일 미설정'}</span>
+                </div>`).join('')}</div>
+            </div>`:''}`;
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+            document.querySelector('#admin-dashboard-modal .modal-title-text').textContent = '인익스테리어 대시보드';
+        }
+
+        // ── 통합 대시보드 ──
+        function showIntegratedDashboard() {
+            const consults = window.consultList||[];
+            const members = window.memberList||[];
+            const interiors = window.interiorList||[];
+            const admins = window.masterPharmacies||[];
+            const activeAdmins = admins.filter(p=>!isExpired(p));
+            const totalIntEst = interiors.reduce((s,r)=>s+(parseFloat(r.intEstimate||r.estimate||0)),0);
+            const totalExtEst = interiors.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
+            const totalMargin = interiors.reduce((s,r)=>{
+                const iE=parseFloat(r.intEstimate||r.estimate||0), iR=parseFloat(r.intMarginRate||r.marginRate||0)/100;
+                const eE=parseFloat(r.extEstimate||0), eR=parseFloat(r.extMarginRate||r.marginRate||0)/100;
+                return s+Math.round(iE*iR)+Math.round(eE*eR);
+            }, 0);
+            const content = document.getElementById('dashboard-content');
+            content.innerHTML = `
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 text-center"><p class="text-[10px] text-blue-400 font-bold">총 상담</p><p class="text-2xl font-black text-blue-700">${consults.length}</p><p class="text-[10px] text-slate-400">전환 ${consults.filter(r=>r.status==='가입완료').length}건</p></div>
+                <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">총 가입자</p><p class="text-2xl font-black text-emerald-700">${members.length}</p><p class="text-[10px] text-slate-400">상담→가입 ${consults.length>0?Math.round(members.length/consults.length*100):0}%</p></div>
+                <div class="bg-amber-50 rounded-xl p-3 border border-amber-100 text-center"><p class="text-[10px] text-amber-500 font-bold">개설행정 진행</p><p class="text-2xl font-black text-amber-600">${activeAdmins.length}</p><p class="text-[10px] text-slate-400">누적 완료 ${admins.filter(p=>isExpired(p)).length}</p></div>
+                <div class="bg-purple-50 rounded-xl p-3 border border-purple-100 text-center"><p class="text-[10px] text-purple-400 font-bold">인익스테리어</p><p class="text-2xl font-black text-purple-700">${interiors.length}</p><p class="text-[10px] text-slate-400">전환율 ${members.length>0?Math.round(interiors.length/members.length*100):0}%</p></div>
+            </div>
+            <div class="bg-gradient-to-r from-teal-50 to-orange-50 rounded-xl p-4 border mb-4">
+                <p class="text-xs font-bold text-slate-700 mb-3">인익스테리어 수익 현황</p>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="text-center"><p class="text-[10px] text-teal-600 font-bold">인테리어 견적합</p><p class="text-lg font-black text-teal-700">${totalIntEst.toLocaleString()}만</p></div>
+                    <div class="text-center"><p class="text-[10px] text-orange-600 font-bold">익스테리어 견적합</p><p class="text-lg font-black text-orange-700">${totalExtEst.toLocaleString()}만</p></div>
+                    <div class="text-center"><p class="text-[10px] text-emerald-600 font-bold">총 예상마진</p><p class="text-lg font-black text-emerald-700">${totalMargin.toLocaleString()}만</p></div>
+                </div>
+            </div>
+            <div class="bg-slate-50 rounded-xl p-3 border text-xs">
+                <p class="font-bold text-slate-700 mb-2">핵심 전환율 흐름</p>
+                <div class="space-y-2">
+                    <div class="flex items-center gap-2"><span class="w-28 text-slate-500">상담→가입</span><div class="flex-1 bg-slate-200 rounded-full h-3"><div class="bg-emerald-400 h-full rounded-full" style="width:${consults.length>0?Math.round(members.length/consults.length*100):0}%"></div></div><span class="font-bold w-10 text-right">${consults.length>0?Math.round(members.length/consults.length*100):0}%</span></div>
+                    <div class="flex items-center gap-2"><span class="w-28 text-slate-500">가입→개설행정</span><div class="flex-1 bg-slate-200 rounded-full h-3"><div class="bg-blue-400 h-full rounded-full" style="width:${members.length>0?Math.round(members.filter(r=>r.adminYn==='진행').length/members.length*100):0}%"></div></div><span class="font-bold w-10 text-right">${members.length>0?Math.round(members.filter(r=>r.adminYn==='진행').length/members.length*100):0}%</span></div>
+                    <div class="flex items-center gap-2"><span class="w-28 text-slate-500">가입→인익스</span><div class="flex-1 bg-slate-200 rounded-full h-3"><div class="bg-purple-400 h-full rounded-full" style="width:${members.length>0?Math.round(interiors.length/members.length*100):0}%"></div></div><span class="font-bold w-10 text-right">${members.length>0?Math.round(interiors.length/members.length*100):0}%</span></div>
+                </div>
+            </div>`;
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+            document.querySelector('#admin-dashboard-modal .modal-title-text').textContent = '통합 대시보드';
+        }
+
+        // ══════════════════════════════
+        //  가맹상담
+        // ══════════════════════════════
+        function toggleRemindDate() {
+            const s = document.getElementById('c-status')?.value;
+            const wrap = document.getElementById('remind-date-wrap');
+            const cancelWrap = document.getElementById('cancel-reason-wrap');
+            const joinWrap = document.getElementById('join-reason-wrap');
+            const joinBtn = document.getElementById('btn-join-from-consult');
+            const saveBtn = document.getElementById('btn-save-only');
+            if (wrap) wrap.classList.toggle('hidden', s !== '리마인드');
+            if (cancelWrap) cancelWrap.classList.toggle('hidden', s !== '취소');
+            if (joinWrap) joinWrap.classList.toggle('hidden', s !== '가입완료');
+            // 가입완료면 저장버튼 숨기고 저장+가입자등록 버튼 표시
+            if (joinBtn) joinBtn.classList.toggle('hidden', s !== '가입완료');
+            if (saveBtn) saveBtn.classList.toggle('hidden', s === '가입완료');
+        }
+
+        // ── 인익스테리어 유형별 동적 필드 ──
+        function updateInteriorFields() {
+            const type = document.getElementById('i-type')?.value;
+            const intOnly = document.getElementById('interior-only-fields');
+            const extOnly = document.getElementById('exterior-only-fields');
+            const both = document.getElementById('both-fields');
+            if (!intOnly) return;
+            intOnly.classList.add('hidden'); extOnly.classList.add('hidden'); both.classList.add('hidden');
+            if (type === '인테리어') intOnly.classList.remove('hidden');
+            else if (type === '익스테리어') extOnly.classList.remove('hidden');
+            else if (type === '인익스테리어') both.classList.remove('hidden');
+            calcAllMargin();
+        }
+
+        function calcAllMargin() {
+            const type = document.getElementById('i-type')?.value;
+            const fmtM = (est, rate) => {
+                const m = Math.round((parseFloat(est)||0) * (parseFloat(rate)||0) / 100);
+                return m > 0 ? `${m.toLocaleString()}만원` : '-';
+            };
+            if (type === '인테리어') {
+                const r = fmtM(document.getElementById('i-int-estimate')?.value, document.getElementById('i-int-margin-rate')?.value);
+                const el = document.getElementById('i-int-margin-result'); if(el) el.textContent = r;
+            } else if (type === '익스테리어') {
+                const r = fmtM(document.getElementById('i-ext-estimate')?.value, document.getElementById('i-ext-margin-rate')?.value);
+                const el = document.getElementById('i-ext-margin-result'); if(el) el.textContent = r;
+            } else if (type === '인익스테리어') {
+                const intEst = parseFloat(document.getElementById('i-both-int-estimate')?.value)||0;
+                const intRate = parseFloat(document.getElementById('i-both-int-rate')?.value)||0;
+                const extEst = parseFloat(document.getElementById('i-both-ext-estimate')?.value)||0;
+                const extRate = parseFloat(document.getElementById('i-both-ext-rate')?.value)||0;
+                const intM = Math.round(intEst*intRate/100);
+                const extM = Math.round(extEst*extRate/100);
+                const el1=document.getElementById('i-both-int-result'); if(el1) el1.textContent = intM>0?`${intM.toLocaleString()}만원`:'-';
+                const el2=document.getElementById('i-both-ext-result'); if(el2) el2.textContent = extM>0?`${extM.toLocaleString()}만원`:'-';
+                const total=intM+extM;
+                const el3=document.getElementById('i-total-result'); if(el3) el3.textContent = total>0?`${total.toLocaleString()}만원`:'-';
+            }
+        }
+
+        window.renderConsults = function() {
+            const list = window.consultList || [];
+            const q = (document.getElementById('consult-search')?.value||'').toLowerCase();
+            const sf = document.getElementById('consult-filter-step')?.value||'';
+            const mf = document.getElementById('consult-filter-manager')?.value||'';
+            const filtered = list.filter(r=>
+                (!q||r.name?.includes(q)||r.phone?.includes(q)||r.region?.includes(q))&&
+                (!sf||r.status===sf)&&(!mf||r.manager===mf)
+            );
+            const el = (id,v) => { const e=document.getElementById(id); if(e) e.textContent=v; };
+            el('consult-total', list.length); el('cs-total', list.length);
+            el('cs-remind', list.filter(r=>r.status==='리마인드').length);
+            el('cs-joined', list.filter(r=>r.status==='가입완료').length);
+            el('cs-cancel', list.filter(r=>r.status==='취소').length);
+            const tbody = document.getElementById('consult-table-body');
+            if (!tbody) return;
+            tbody.innerHTML = filtered.length===0 ? `<tr><td colspan="11" class="text-center py-8 text-slate-400 text-sm">등록된 상담 내역이 없습니다</td></tr>` :
+            filtered.map(r=>`<tr class="hover:bg-blue-50/30">
+                <td data-label="상담일" class="p-3 text-[11px]">${r.date||'-'}</td>
+                <td data-label="이름" class="p-3 font-bold">${r.name||'-'}</td>
+                <td data-label="연락처" class="p-3 text-[11px]">${r.phone||'-'}</td>
+                <td data-label="지역" class="p-3 text-[11px]">${r.region||'-'}</td>
+                <td data-label="약국유형" class="p-3">${sBadge(r.pharmacyType||'미정')}</td>
+                <td data-label="상담경로" class="p-3 text-[11px]">${r.channel||'-'}</td>
+                <td data-label="담당자" class="p-3 text-[11px]">${r.manager||'-'}</td>
+                <td data-label="단계" class="p-3">${sBadge(r.status)}</td>
+                <td data-label="리마인드" class="p-3 text-[11px] text-sky-600">${r.remindDate||'-'}</td>
+                <td data-label="메모" class="p-3 text-[11px] text-slate-400 max-w-[120px] truncate" title="${r.memo||''}">${r.memo||'-'}</td>
+                <td data-label="관리" class="p-3 text-center whitespace-nowrap">
+                    <button onclick="editConsult('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button>
+                    ${r.status==='가입완료'?`<span class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-2 py-1 bg-emerald-50 mr-1">가입자</span>`:''}
+                    <button onclick="deleteConsult('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>
+                </td>
+            </tr>`).join('');
+        };
+
+        function goToMemberFromConsult(cid) {
+            const r = (window.consultList||[]).find(x=>x.id===cid);
+            if (!r) return;
+            openMemberModal();
+            document.getElementById('m-name').value = r.name||'';
+            document.getElementById('m-phone').value = r.phone||'';
+            document.getElementById('m-address').value = r.region||'';
+            document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+            switchMainTab('tab-members-main');
+            closeMemberModal();
+            openMemberModal();
+        }
+
+        function openConsultModal() {
+            document.getElementById('c-edit-id').value='';
+            document.getElementById('c-date').value=new Date().toISOString().split('T')[0];
+            ['c-name','c-phone','c-region','c-memo','c-remind-date','c-size','c-cancel-detail','c-join-reason-etc'].forEach(i=>document.getElementById(i)&&(document.getElementById(i).value=''));
+            document.getElementById('c-channel').value='지인소개';
+            document.getElementById('c-manager').value='';
+            document.getElementById('c-pharmacy-type').value='';
+            document.getElementById('c-competitor').value='';
+            document.getElementById('c-status').value='상담신청';
+            document.getElementById('c-cancel-reason').value='';
+            document.querySelectorAll('.join-reason-cb').forEach(cb=>cb.checked=false);
+            toggleRemindDate();
+            document.getElementById('consult-modal').style.display='flex';
+        }
+        function closeConsultModal() {
+            document.getElementById('consult-modal').style.display='none';
+        }
+        function editConsult(id) {
+            const r=(window.consultList||[]).find(x=>x.id===id); if(!r) return;
+            document.getElementById('c-edit-id').value=id;
+            document.getElementById('c-date').value=r.date||'';
+            document.getElementById('c-name').value=r.name||'';
+            document.getElementById('c-phone').value=r.phone||'';
+            document.getElementById('c-region').value=r.region||'';
+            document.getElementById('c-channel').value=r.channel||'지인소개';
+            document.getElementById('c-manager').value=r.manager||'';
+            document.getElementById('c-pharmacy-type').value=r.pharmacyType||'';
+            document.getElementById('c-competitor').value=r.competitor||'';
+            document.getElementById('c-size').value=r.size||'';
+            document.getElementById('c-status').value=r.status||'상담신청';
+            document.getElementById('c-remind-date').value=r.remindDate||'';
+            document.getElementById('c-cancel-reason').value=r.cancelReason||'';
+            const cd=document.getElementById('c-cancel-detail'); if(cd) cd.value=r.cancelDetail||'';
+            document.querySelectorAll('.join-reason-cb').forEach(cb=>{cb.checked=(r.joinReasons||[]).includes(cb.value);});
+            const jre=document.getElementById('c-join-reason-etc'); if(jre) jre.value='';
+            document.getElementById('c-memo').value=r.memo||'';
+            toggleRemindDate();
+            document.getElementById('consult-modal').style.display='flex';
+        }
+        function saveConsult(goJoin) {
+            const editId=document.getElementById('c-edit-id').value;
+            const joinReasons = Array.from(document.querySelectorAll('.join-reason-cb:checked')).map(cb=>cb.value);
+            const joinReasonEtc = document.getElementById('c-join-reason-etc')?.value || '';
+            const record={
+                id:editId||String(Date.now()),
+                date:document.getElementById('c-date').value,
+                name:document.getElementById('c-name').value,
+                phone:document.getElementById('c-phone').value,
+                region:document.getElementById('c-region').value,
+                channel:document.getElementById('c-channel').value,
+                manager:document.getElementById('c-manager').value,
+                pharmacyType:document.getElementById('c-pharmacy-type').value,
+                competitor:document.getElementById('c-competitor').value,
+                size:document.getElementById('c-size').value,
+                status:document.getElementById('c-status').value,
+                remindDate:document.getElementById('c-remind-date').value,
+                cancelReason:document.getElementById('c-cancel-reason').value,
+                cancelDetail:document.getElementById('c-cancel-detail')?.value||'',
+                joinReasons: joinReasons.concat(joinReasonEtc?[joinReasonEtc]:[]),
+                memo:document.getElementById('c-memo').value,
+            };
+            if(!record.name){alert('이름을 입력하세요');return;}
+            if(editId){const idx=window.consultList.findIndex(x=>x.id===editId);if(idx>-1)window.consultList[idx]=record;}
+            else{window.consultList.unshift(record);}
+            window.saveConsults&&window.saveConsults();
+            window.renderConsults();
+            closeConsultModal();
+            if(goJoin&&record.status==='가입완료'){
+                openMemberModal();
+                document.getElementById('m-name').value=record.name;
+                document.getElementById('m-phone').value=record.phone;
+                document.getElementById('m-address').value=record.region;
+                document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
+                switchMainTab('tab-members-main');
+            }
+        }
+        function deleteConsult(id){
+            if(!confirm('삭제하시겠습니까?'))return;
+            window.consultList=(window.consultList||[]).filter(x=>x.id!==id);
+            window.saveConsults&&window.saveConsults();
+            window.renderConsults();
+        }
+
+        // ══════════════════════════════
+        //  가입자 관리
+        // ══════════════════════════════
+        window.renderMembers = function() {
+            const list = window.memberList||[];
+            const q = (document.getElementById('member-search')?.value||'').toLowerCase();
+            const pf = document.getElementById('member-filter-payment')?.value||'';
+            const mf = (document.getElementById('member-filter-manager')?.value||'').toLowerCase();
+            const filtered = list.filter(r=>
+                (!q||r.name?.includes(q)||r.pharmacy?.includes(q))&&
+                (!pf||r.payment===pf)&&
+                (!mf||r.manager?.toLowerCase().includes(mf))
+            );
+            const el=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+            el('member-total',list.length);
+            const tbody=document.getElementById('member-table-body'); if(!tbody)return;
+            tbody.innerHTML=filtered.length===0?`<tr><td colspan="11" class="text-center py-8 text-slate-400 text-sm">등록된 가입자가 없습니다</td></tr>`:
+            filtered.map(r=>`<tr class="hover:bg-blue-50/30">
+                <td data-label="가입일" class="p-3 text-[11px]">${r.date||'-'}</td>
+                <td data-label="약사명" class="p-3 font-bold">${r.name||'-'}</td>
+                <td data-label="약국명" class="p-3">${r.pharmacy||'-'}</td>
+                <td data-label="연락처" class="p-3 text-[11px]">${r.phone||'-'}</td>
+                <td data-label="계약서" class="p-3">${sBadge(r.contract||'작성전')}</td>
+                <td data-label="입금" class="p-3">${sBadge(r.payment||'대기')}</td>
+                <td data-label="개설행정" class="p-3">${sBadge(r.adminYn||'미진행')}</td>
+                <td data-label="인테리어" class="p-3">${sBadge(r.interiorYn||'미진행')}</td>
+                <td data-label="익스테리어" class="p-3">${sBadge(r.exteriorYn||'미진행')}</td>
+                <td data-label="담당" class="p-3 text-[11px]">${r.manager||'-'}</td>
+                <td data-label="관리" class="p-3 text-center whitespace-nowrap">
+                    <button onclick="editMember('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button>
+                    <button onclick="deleteMember('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>
+                </td>
+            </tr>`).join('');
+        };
+
+        function openMemberModal() {
+            document.getElementById('m-edit-id').value='';
+            ['m-name','m-pharmacy','m-phone','m-manager','m-address','m-memo','m-size','m-prescription'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+            document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
+            document.getElementById('m-newborn').value='';
+            document.getElementById('m-grade').value='정회원';
+            document.getElementById('m-contract').value='작성전';
+            document.getElementById('m-payment').value='대기';
+            document.getElementById('m-admin-yn').value='미진행';
+            document.getElementById('m-interior-yn').value='미진행';
+            document.getElementById('m-exterior-yn').value='미진행';
+            document.getElementById('member-modal').style.display='flex';
+        }
+        function closeMemberModal(){
+            document.getElementById('member-modal').style.display='none';
+        }
+        function editMember(id){
+            const r=(window.memberList||[]).find(x=>x.id===id);if(!r)return;
+            document.getElementById('m-edit-id').value=id;
+            document.getElementById('m-date').value=r.date||'';
+            document.getElementById('m-name').value=r.name||'';
+            document.getElementById('m-pharmacy').value=r.pharmacy||'';
+            document.getElementById('m-phone').value=r.phone||'';
+            document.getElementById('m-address').value=r.address||'';
+            document.getElementById('m-manager').value=r.manager||'';
+            document.getElementById('m-newborn').value=r.newborn||'';
+            document.getElementById('m-grade').value=r.grade||'정회원';
+            document.getElementById('m-size').value=r.size||'';
+            document.getElementById('m-prescription').value=r.prescription||'';
+            document.getElementById('m-contract').value=r.contract||'작성전';
+            document.getElementById('m-payment').value=r.payment||'대기';
+            document.getElementById('m-admin-yn').value=r.adminYn||'미진행';
+            document.getElementById('m-interior-yn').value=r.interiorYn||'미진행';
+            document.getElementById('m-exterior-yn').value=r.exteriorYn||'미진행';
+            document.getElementById('m-memo').value=r.memo||'';
+            document.getElementById('member-modal').style.display='flex';
+        }
+        function saveMember(){
+            const editId=document.getElementById('m-edit-id').value;
+            const interiorYn=document.getElementById('m-interior-yn').value;
+            const exteriorYn=document.getElementById('m-exterior-yn').value;
+            const adminYn=document.getElementById('m-admin-yn').value;
+            const record={
+                id:editId||String(Date.now()),
+                date:document.getElementById('m-date').value,
+                name:document.getElementById('m-name').value,
+                pharmacy:document.getElementById('m-pharmacy').value,
+                phone:document.getElementById('m-phone').value,
+                address:document.getElementById('m-address').value,
+                manager:document.getElementById('m-manager').value,
+                newborn:document.getElementById('m-newborn').value,
+                grade:document.getElementById('m-grade').value,
+                size:document.getElementById('m-size').value,
+                prescription:document.getElementById('m-prescription').value,
+                contract:document.getElementById('m-contract').value,
+                payment:document.getElementById('m-payment').value,
+                adminYn,interiorYn,exteriorYn,
+                memo:document.getElementById('m-memo').value,
+            };
+            if(!record.name){alert('약사명을 입력하세요');return;}
+            if(editId){const idx=window.memberList.findIndex(x=>x.id===editId);if(idx>-1)window.memberList[idx]=record;}
+            else{window.memberList.unshift(record);}
+            window.saveMembers&&window.saveMembers();
+            window.renderMembers();
+            closeMemberModal();
+
+            // ── 개설행정 연동 ──
+            if(adminYn==='진행'){
+                // 동일 약사가 이미 개설행정에 있는지 확인 (id 기반 또는 이름 기반)
+                const alreadyExists=(window.masterPharmacies||[]).find(p=>
+                    p.fromMemberId===record.id || p.pharmacist===record.name
+                );
+                if(!alreadyExists){
+                    const today=new Date().toISOString().split('T')[0];
+                    const defaultOpen=new Date();defaultOpen.setDate(defaultOpen.getDate()+90);
+                    const newP={
+                        id:Date.now(),
+                        name:record.pharmacy||`${record.name} 약국`,
+                        region:record.address||'미정',
+                        pharmacist:record.name,
+                        manager:record.manager||'',
+                        contractDate:record.date||today,
+                        openDate:defaultOpen.toISOString().split('T')[0],
+                        interior:'',
+                        fromMemberId:record.id,
+                        fromMember:true
+                    };
+                    if(!window.masterPharmacies) window.masterPharmacies=[];
+                    window.masterPharmacies.push(newP);
+                    if(!window.timelineMap) window.timelineMap={};
+                    // STEP_DEFS는 다른 script 블록에 있으므로 window에서 가져옴
+                    const stepDefs = window.STEP_DEFS || (typeof STEP_DEFS!=='undefined'?STEP_DEFS:[]);
+                    window.timelineMap[newP.id] = stepDefs.length
+                        ? stepDefs.map(s=>({...s,status:'대기',vigo:'',checkedItems:[],formData:{}}))
+                        : [];
+                    if(window.saveToFirebase) window.saveToFirebase();
+                    if(typeof window.refresh==='function') window.refresh();
+                    // 개설행정 탭으로 이동
+                    switchMainTab('tab-admin-main');
+                }
+            }
+
+            // ── 인테리어/익스테리어 자동 연동 ──
+            if(interiorYn==='진행'||exteriorYn==='진행'){
+                const type=interiorYn==='진행'&&exteriorYn==='진행'?'인익스테리어':interiorYn==='진행'?'인테리어':'익스테리어';
+                const exists=(window.interiorList||[]).find(x=>x.name===record.name&&x.sourceId===record.id);
+                if(!exists){
+                    window.interiorList=window.interiorList||[];
+                    window.interiorList.unshift({id:String(Date.now()),sourceId:record.id,name:record.name,pharmacy:record.pharmacy||'',type,status:'실측예정',partner:'',partnerManager:'',intEstimate:'0',intMarginRate:'0',extEstimate:'0',extMarginRate:'0',marginRate:'0',memo:''});
+                    window.saveInteriors&&window.saveInteriors();
+                    window.renderInteriors&&window.renderInteriors();
+                }
+            }
+        }
+        function deleteMember(id){
+            if(!confirm('삭제하시겠습니까?'))return;
+            window.memberList=(window.memberList||[]).filter(x=>x.id!==id);
+            window.saveMembers&&window.saveMembers();
+            window.renderMembers();
+        }
+
+        // ══════════════════════════════
+        //  인익스테리어
+        // ══════════════════════════════
+
+        window.renderInteriors = function(){
+            const list=window.interiorList||[];
+            const q=(document.getElementById('int-search')?.value||'').toLowerCase();
+            const tf=document.getElementById('int-filter-type')?.value||'';
+            const sf=document.getElementById('int-filter-status')?.value||'';
+            const filtered=list.filter(r=>(!q||r.name?.includes(q)||r.pharmacy?.includes(q))&&(!tf||r.type===tf)&&(!sf||r.status===sf));
+            const calcM=(est,rate)=>Math.round((parseFloat(est)||0)*(parseFloat(rate)||0)/100);
+            const totalIntEst=list.reduce((s,r)=>s+(parseFloat(r.intEstimate||r.estimate||0)),0);
+            const totalExtEst=list.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
+            const totalMargin=list.reduce((s,r)=>s+calcM(r.intEstimate||r.estimate||0,r.intMarginRate||r.marginRate||0)+calcM(r.extEstimate||0,r.extMarginRate||r.marginRate||0),0);
+            const totalEst=totalIntEst+totalExtEst;
+            const avgRate=totalEst>0?Math.round(totalMargin/totalEst*100):0;
+            const memberCount=(window.memberList||[]).length;
+            const intRate=memberCount>0?Math.round(list.length/memberCount*100):0;
+            const el=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+            el('int-count',list.length); el('int-rate',intRate+'%');
+            el('int-revenue',(totalIntEst+totalExtEst).toLocaleString()+'만원');
+            el('int-margin',totalMargin.toLocaleString()+'만원');
+            el('int-margin-rate',avgRate+'%');
+            const tbody=document.getElementById('interior-table-body');if(!tbody)return;
+            tbody.innerHTML=filtered.length===0?`<tr><td colspan="9" class="text-center py-8 text-slate-400 text-sm">등록된 인익스테리어 내역이 없습니다</td></tr>`:
+            filtered.map(r=>{
+                const intE=parseFloat(r.intEstimate||r.estimate||0), intR=parseFloat(r.intMarginRate||r.marginRate||0);
+                const extE=parseFloat(r.extEstimate||0), extR=parseFloat(r.extMarginRate||r.marginRate||0);
+                const intM=Math.round(intE*intR/100), extM=Math.round(extE*extR/100);
+                const totalM=intM+extM;
+                let estDisplay='';
+                if(r.type==='인테리어') estDisplay=`인테리어 ${intE.toLocaleString()}만`;
+                else if(r.type==='익스테리어') estDisplay=`익스테리어 ${extE.toLocaleString()}만`;
+                else estDisplay=`인 ${intE.toLocaleString()}+ 익 ${extE.toLocaleString()}만`;
+                return `<tr class="hover:bg-blue-50/30">
+                    <td data-label="약사명" class="p-3 font-bold">${r.name||'-'}</td><td data-label="약국명" class="p-3">${r.pharmacy||'-'}</td>
+                    <td data-label="유형" class="p-3">${sBadge(r.type)}</td><td data-label="상태" class="p-3">${sBadge(r.status)}</td>
+                    <td data-label="협력업체" class="p-3 text-[11px]">${r.partner||'-'}</td>
+                    <td data-label="견적" class="p-3 text-[11px] font-bold">${estDisplay}</td>
+                    <td data-label="마진율" class="p-3 text-[11px]">${r.type==='인익스테리어'?`인${intR}%/익${extR}%`:(intR||extR)+'%'}</td>
+                    <td data-label="예상마진" class="p-3 text-[11px] font-bold text-emerald-600">${totalM.toLocaleString()}만</td>
+                    <td data-label="관리" class="p-3 text-center whitespace-nowrap">
+                        <button onclick="editInterior('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button>
+                        <button onclick="deleteInterior('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        };
+
+        function openInteriorModal(){
+            document.getElementById('i-edit-id').value='';
+            ['i-name','i-pharmacy','i-partner-manager','i-memo'].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
+            document.getElementById('i-partner').value='';
+            document.getElementById('i-type').value='인테리어';
+            document.getElementById('i-status').value='실측예정';
+            ['i-int-estimate','i-int-margin-rate','i-ext-estimate','i-ext-margin-rate','i-both-int-estimate','i-both-int-rate','i-both-ext-estimate','i-both-ext-rate'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='0';});
+            ['i-expected-date','i-longterm-reason','i-remind-date'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';}); const _dr=document.getElementById('i-drop-reason');if(_dr)_dr.value=''; const _dd=document.getElementById('i-drop-detail');if(_dd)_dd.value='';
+            const ltw=document.getElementById('i-longterm-wrap'); if(ltw) ltw.classList.add('hidden');
+            updateInteriorFields();
+            document.getElementById('interior-modal').style.display='flex';
+        }
+        function closeInteriorModal(){
+            document.getElementById('interior-modal').style.display='none';
+        }
+        function editInterior(id){
+            const r=(window.interiorList||[]).find(x=>x.id===id);if(!r)return;
+            document.getElementById('i-edit-id').value=id;
+            document.getElementById('i-name').value=r.name||'';
+            document.getElementById('i-pharmacy').value=r.pharmacy||'';
+            document.getElementById('i-type').value=r.type||'인테리어';
+            document.getElementById('i-status').value=r.status||'실측예정';
+            document.getElementById('i-partner').value=r.partner||'';
+            document.getElementById('i-partner-manager').value=r.partnerManager||'';
+            document.getElementById('i-memo').value=r.memo||'';
+            const ed=document.getElementById('i-expected-date');if(ed)ed.value=r.expectedDate||'';
+            const rd=document.getElementById('i-remind-date');if(rd)rd.value=r.remindDate||'';
+            const lr=document.getElementById('i-longterm-reason');if(lr)lr.value=r.longtermReason||'';
+            const dr=document.getElementById('i-drop-reason');if(dr)dr.value=r.dropReason||'';
+            const dd=document.getElementById('i-drop-detail');if(dd)dd.value=r.dropDetail||'';
+            toggleLongtermWrap();
+            if(r.type==='인테리어'){
+                document.getElementById('i-int-estimate').value=r.intEstimate||r.estimate||'0';
+                document.getElementById('i-int-margin-rate').value=r.intMarginRate||r.marginRate||'0';
+            } else if(r.type==='익스테리어'){
+                document.getElementById('i-ext-estimate').value=r.extEstimate||r.estimate||'0';
+                document.getElementById('i-ext-margin-rate').value=r.extMarginRate||r.marginRate||'0';
+            } else {
+                document.getElementById('i-both-int-estimate').value=r.intEstimate||'0';
+                document.getElementById('i-both-int-rate').value=r.intMarginRate||'0';
+                document.getElementById('i-both-ext-estimate').value=r.extEstimate||'0';
+                document.getElementById('i-both-ext-rate').value=r.extMarginRate||'0';
+            }
+            updateInteriorFields();
+            document.getElementById('interior-modal').style.display='flex';
+        }
+        function saveInterior(){
+            const editId=document.getElementById('i-edit-id').value;
+            const type=document.getElementById('i-type').value;
+            let intEstimate='0',intMarginRate='0',extEstimate='0',extMarginRate='0';
+            if(type==='인테리어'){
+                intEstimate=document.getElementById('i-int-estimate')?.value||'0';
+                intMarginRate=document.getElementById('i-int-margin-rate')?.value||'0';
+            } else if(type==='익스테리어'){
+                extEstimate=document.getElementById('i-ext-estimate')?.value||'0';
+                extMarginRate=document.getElementById('i-ext-margin-rate')?.value||'0';
+            } else {
+                intEstimate=document.getElementById('i-both-int-estimate')?.value||'0';
+                intMarginRate=document.getElementById('i-both-int-rate')?.value||'0';
+                extEstimate=document.getElementById('i-both-ext-estimate')?.value||'0';
+                extMarginRate=document.getElementById('i-both-ext-rate')?.value||'0';
+            }
+            const record={id:editId||String(Date.now()),name:document.getElementById('i-name').value,pharmacy:document.getElementById('i-pharmacy').value,type,status:document.getElementById('i-status').value,partner:document.getElementById('i-partner').value,partnerManager:document.getElementById('i-partner-manager').value,intEstimate,intMarginRate,extEstimate,extMarginRate,memo:document.getElementById('i-memo').value,expectedDate:document.getElementById('i-expected-date')?.value||'',remindDate:document.getElementById('i-remind-date')?.value||'',longtermReason:document.getElementById('i-longterm-reason')?.value||'',dropReason:document.getElementById('i-drop-reason')?.value||'',dropDetail:document.getElementById('i-drop-detail')?.value||''};
+            if(!record.name){alert('약사명을 입력하세요');return;}
+            if(editId){const idx=window.interiorList.findIndex(x=>x.id===editId);if(idx>-1)window.interiorList[idx]=record;}
+            else{window.interiorList.unshift(record);}
+            window.saveInteriors&&window.saveInteriors();
+            window.renderInteriors();
+            closeInteriorModal();
+        }
+        function deleteInterior(id){
+            if(!confirm('삭제하시겠습니까?'))return;
+            window.interiorList=(window.interiorList||[]).filter(x=>x.id!==id);
+            window.saveInteriors&&window.saveInteriors();
+            window.renderInteriors();
+        }
+
+
+        // ── 통합 현황 → 통합 대시보드로 통합 ──
+        function showSummaryModal(){ showIntegratedDashboard(); }
+        function closeSummaryModal(){ closeAdminDashboard(); }
+    </script>
+
+
+    <script>
+        const STEP_DEFS = [
+            { step: 2, title: "카드/대출/세무/ATC 상담 연계", day: -25, desc: "아래 항목 체크 시 상담 연계 도와드리고 있습니다.", subChecks: ["카드발급 신청", "대출 상담", "세무사 연계", "ATC 상담 연계"] },
+            { step: 3, title: "포스패키지 안내", day: -20, desc: "참포스 사양 확정 및 설치 상담" },
+            { step: 4, title: "구매물품 안내", day: -18, desc: "약국 오픈에 필요한 소모품 및 잡자재 구매" },
+            { step: 5, title: "보안/인터넷/전화/정수기 등 상담 연계", day: -15, desc: "아래 항목 체크 시 상담 연계 도와드리고 있습니다.", subChecks: ["CCTV 보안", "인터넷/전화", "정수기 렌탈", "공기청정기 렌탈"] },
+            { step: 6, title: "PC 패키지 안내", day: -12, desc: "업무용 PC 패키지 신청" },
+            { step: 7, title: "명함 신청", day: -10, desc: "아래 제작 정보를 정확히 기입해주시면 본사에서 시안 제작 후 발주가 진행됩니다.", inputs: ["약국명", "약사명", "주소", "전화", "팩스", "이메일주소", "핸드폰번호"] },
+            { step: 8, title: "보건소 실사 및 등록 안내", day: -7, desc: "현장 실사 대응 및 등록증 신청 안내" },
+            { step: 9, title: "약국 운영자료 및 필요 서류 안내", day: -3, desc: "약국 운영자료 및 필요 서류 안내" },
+            { step: 10, title: "개국 완료", day: 0, desc: "약국 개설을 진심으로 축하드립니다!" }
+        ];
+        window.STEP_DEFS = STEP_DEFS; // 다른 script 블록에서도 접근 가능
+
+        const todayStr = new Date().toISOString().split('T')[0];
+        const defaultOpen = new Date(); defaultOpen.setDate(defaultOpen.getDate() + 18);
+        const defaultOpenStr = defaultOpen.toISOString().split('T')[0];
+
+        // 전역 변수 (Firebase 리스너가 외부에서 실시간 갱신)
+        if (!window.masterPharmacies) window.masterPharmacies = [{ id: 1, name: "참약사 메인약국", region: "서울", pharmacist: "홍길동", contractDate: todayStr, openDate: defaultOpenStr, manager: "담당 매니저", interior: "참디자인 / 김실장" }];
+        if (!window.timelineMap) window.timelineMap = {};
+        // 로컬 참조용 단축 변수
+        var masterPharmacies = window.masterPharmacies;
+        var timelineMap = window.timelineMap;
+
+        let activeId = 1; let isAdminView = true;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            // Firebase 데이터 로드 대기 (최대 1.5초로 단축, 모바일 대응)
+            let waited = 0;
+            const waitForFB = setInterval(() => {
+                waited += 100;
+                if (window._fbReady || waited >= 1500) {
+                    clearInterval(waitForFB);
+                    const splash = document.getElementById('splash-screen');
+                    if (splash) {
+                        splash.style.transition = 'opacity 0.3s ease';
+                        splash.style.opacity = '0';
+                        splash.style.pointerEvents = 'none'; // 즉시 클릭 차단 해제
+                        setTimeout(() => { if(splash.parentNode) splash.parentNode.removeChild(splash); }, 350);
+                    }
+                    document.getElementById('fb-loading')?.remove();
+                    initApp();
+                }
+            }, 100);
+        });
+
+        function initApp() {
+            const sharedId = new URLSearchParams(window.location.search).get('id');
+            if (sharedId) { 
+                isAdminView = false; 
+                activeId = parseInt(sharedId); 
+                document.getElementById('admin-header').style.display = 'none'; 
+                document.getElementById('admin-dashboard-section').style.display = 'none'; 
+                document.getElementById('admin-edit-panel').style.display = 'none'; 
+                document.getElementById('pharmacist-banner').style.display = 'block';
+                // 탭 전체도 숨김 (약사는 개설행정 탭만)
+                ['tab-consult-main','tab-members-main','tab-interior-main'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                });
+                document.getElementById('tab-admin-main').style.display = 'block';
+            }
+            else { 
+                isAdminView = true; 
+                document.getElementById('admin-header').style.display = 'block';
+                document.getElementById('admin-header').style.display='block'; document.getElementById('admin-header').classList.remove('hidden');
+                document.getElementById('admin-dashboard-section').style.display = 'block'; 
+                document.getElementById('admin-edit-panel').style.display = 'block';
+                document.getElementById('pharmacist-banner').style.display = 'none';
+            }
+            
+            checkAndDailyBackup();
+            refresh();
+            if (typeof window.renderConsults === 'function') window.renderConsults();
+            if (typeof window.renderMembers === 'function') window.renderMembers();
+            if (typeof window.renderInteriors === 'function') window.renderInteriors();
+        }
+
+        function checkAndDailyBackup() {
+            // Firebase로 전환 후 자동백업은 Firestore가 담당 (별도 처리 불필요)
+        }
+
+
+        function refresh() {
+            // 항상 window 최신값 참조
+            masterPharmacies = window.masterPharmacies;
+            timelineMap = window.timelineMap;
+            window.refresh = refresh; // 외부(Firebase 리스너)에서 호출 가능하게
+            const p = masterPharmacies.find(x => x.id === activeId) || masterPharmacies[0];
+            if (!p) return; activeId = p.id;
+            if(!timelineMap[activeId]) { timelineMap[activeId] = STEP_DEFS.map(s => ({...s, status: "대기", vigo: "", checkedItems: [], formData: {}})); }
+            
+            if (!isAdminView) {
+                const step10 = timelineMap[activeId].find(x => x.step === 10);
+                if (step10 && step10.status === "완료") {
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const openDate = new Date(p.openDate); openDate.setHours(0,0,0,0);
+                    const timeDiff = today.getTime() - openDate.getTime();
+                    const passedDays = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+
+                    if (passedDays >= 3) {
+                        document.getElementById("expired-screen").classList.remove("hidden");
+                        return;
+                    } else {
+                        document.getElementById("celebration-screen").classList.remove("hidden");
+                        return;
+                    }
+                } else {
+                    document.getElementById("expired-screen").classList.add("hidden");
+                    document.getElementById("celebration-screen").classList.add("hidden");
+                }
+            }
+
+            document.getElementById('current-focused-title').innerText = `${p.name} (${p.pharmacist} 약사님)`;
+            document.getElementById('display-manager-name').innerText = p.manager || "-";
+            document.getElementById('display-interior-info').innerText = p.interior || "-";
+            const prog = calculateProgress(activeId);
+            if (!isAdminView) {
+                document.getElementById('pharm-progress-bar').style.width = prog + "%";
+                document.getElementById('pharm-progress-text').innerText = `${prog}%`;
+            } else {
+                document.getElementById('edit-input-name').value = p.name; document.getElementById('edit-input-region').value = p.region || "서울"; document.getElementById('edit-input-pharmacist').value = p.pharmacist; document.getElementById('edit-input-manager').value = p.manager || ""; document.getElementById('edit-input-contract-date').value = p.contractDate || ""; document.getElementById('edit-input-open-date').value = p.openDate; document.getElementById('edit-input-interior').value = p.interior || ""; renderList();
+            }
+            renderTimeline(activeId, p.openDate); renderCalendar(p.openDate, activeId);
+        }
+
+        function calculateProgress(id) {
+            const steps = timelineMap[id] || []; let score = 0;
+            steps.forEach(s => { if(s.status === "완료") score += 100; else if(s.status === "진행중") score += 50; });
+            return steps.length ? Math.round(score / steps.length) : 0;
+        }
+
+        function renderList() {
+            const body = document.getElementById("pharmacy-table-body"); body.innerHTML = "";
+            // 완료(만료) 약국은 기본 리스트에서 숨김
+            const activeList = masterPharmacies.filter(p => !isExpired(p));
+            const completedCount = masterPharmacies.length - activeList.length;
+            document.getElementById("total-count").innerText = `${activeList.length} 진행중 / 완료 ${completedCount}`;
+            activeList.forEach(p => {
+                const prog = calculateProgress(p.id); const tr = document.createElement("tr");
+                tr.className = `hover:bg-blue-50/50 cursor-pointer ${p.id === activeId ? 'bg-blue-50 border-l-4 border-blue-600 font-bold' : ''}`;
+                tr.innerHTML = `<td class="p-3 pl-4" onclick="switchTarget(${p.id})">${p.name}</td><td class="p-3 text-emerald-600" onclick="switchTarget(${p.id})">${p.region}</td><td class="p-3" onclick="switchTarget(${p.id})">${p.pharmacist}</td><td class="p-3 text-[10px]" onclick="switchTarget(${p.id})">${p.contractDate || '-'}</td><td class="p-3 font-bold" onclick="switchTarget(${p.id})">${p.openDate}</td><td class="p-3" onclick="switchTarget(${p.id})">${p.manager || '-'}</td><td class="p-3 text-[11px]" onclick="switchTarget(${p.id})">${p.interior || '-'}</td><td class="p-3"><div class="flex items-center gap-2"><div class="w-12 bg-slate-200 rounded-full h-1.5"><div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${prog}%"></div></div><span class="text-[10px] w-6 font-bold">${prog}%</span></div></td><td class="p-3 text-center"><button onclick="copyLink(${p.id})" class="bg-white border border-slate-300 hover:bg-slate-50 text-[10px] px-2.5 py-1 rounded shadow-sm text-slate-700 font-medium transition-colors"><i class="fa-solid fa-copy mr-1 text-slate-400"></i>링크 복사</button></td>`;
+                body.appendChild(tr);
+            });
+        }
+
+        function renderCalendar(openDateStr, projId) {
+            const container = document.getElementById("calendar-body"); container.innerHTML = "";
+            const days = ["일", "월", "화", "수", "목", "금", "토"];
+            days.forEach(d => { container.innerHTML += `<div class="calendar-day-head">${d}</div>`; });
+            
+            const today = new Date(); today.setHours(0,0,0,0); const openDate = new Date(openDateStr);
+            const firstEventDay = new Date(openDate); firstEventDay.setDate(openDate.getDate() - 25);
+            const year = firstEventDay.getFullYear(); const month = firstEventDay.getMonth() + 1;
+            document.getElementById("calendar-month-title").innerText = `📅 개국 여정 캘린더 (${year}년 ${month}월 기준)`;
+            
+            const calStart = new Date(firstEventDay); calStart.setDate(firstEventDay.getDate() - firstEventDay.getDay());
+            for(let i=0; i<35; i++) {
+                const cur = new Date(calStart); cur.setDate(calStart.getDate() + i);
+                const isToday = cur.toDateString() === today.toDateString();
+                const cell = document.createElement("div"); 
+                cell.className = `calendar-cell border ${isToday ? 'border-blue-400 bg-blue-50/20 ring-1 ring-blue-300 ring-inset' : 'border-slate-100'}`;
+
+                // 날짜 숫자
+                const dateSpan = document.createElement('span');
+                dateSpan.className = `cal-date-num text-[10px] font-bold ${isToday ? 'text-blue-700 font-black' : (cur.getMonth() !== firstEventDay.getMonth() ? 'text-slate-200' : 'text-slate-400')}`;
+                dateSpan.innerText = cur.getDate();
+                cell.appendChild(dateSpan);
+
+                // TODAY 뱃지
+                if(isToday) {
+                    const badge = document.createElement('span');
+                    badge.className = 'bg-blue-600 text-white text-[7px] px-0.5 rounded font-black absolute right-0.5 top-0.5';
+                    badge.innerText = '★';
+                    cell.appendChild(badge);
+                }
+
+                // dot 컨테이너 (모바일용)
+                const dotsRow = document.createElement('div');
+                dotsRow.className = 'calendar-dots-row';
+                cell.appendChild(dotsRow);
+
+                // 이벤트 목록 수집
+                const cellEvents = [];
+                timelineMap[projId]?.forEach(s => { 
+                    const ed = new Date(openDate); ed.setDate(openDate.getDate() + s.day); 
+                    if(ed.toDateString() === cur.toDateString()) cellEvents.push({...s, isOpen: false});
+                });
+                if(cur.toDateString() === openDate.toDateString()) {
+                    cellEvents.push({title:'★ OPEN', status:'완료', desc:'약국 개국일입니다!', isOpen: true});
+                }
+
+                // 이벤트 렌더링
+                cellEvents.forEach(s => {
+                    const c = s.isOpen ? '#ef4444' : (s.status === "완료" ? "#10b981" : (s.status === "진행중" ? "#3b82f6" : "#94a3b8"));
+                    // PC: 텍스트 이벤트
+                    const ev = document.createElement('div');
+                    ev.className = 'calendar-event';
+                    ev.style.cssText = `background:${c}22; border-color:${c}; color:${c};`;
+                    ev.title = s.title;
+                    ev.innerText = s.title;
+                    cell.appendChild(ev);
+                    // 모바일: dot
+                    const dot = document.createElement('div');
+                    dot.className = 'calendar-dot';
+                    dot.style.background = c;
+                    dot.title = s.title;
+                    dotsRow.appendChild(dot);
+                });
+
+                // 모바일 탭 이벤트
+                cell.addEventListener('click', () => {
+                    if (window.innerWidth > 640) return;
+                    if (cellEvents.length === 0) return;
+                    openCalPopup(`${cur.getMonth()+1}월 ${cur.getDate()}일 일정`, cellEvents);
+                });
+
+                container.appendChild(cell); if(i >= 28 && cur >= openDate) break;
+            }
+        }
+
+        function renderTimeline(id, openDateStr) {
+            const container = document.getElementById("timeline-container"); container.innerHTML = "";
+            const today = new Date(); today.setHours(0,0,0,0);
+            const openDate = new Date(openDateStr); openDate.setHours(0,0,0,0);
+
+            (timelineMap[id] || []).forEach(t => {
+                const node = document.createElement("div"); node.className = "relative pl-6 md:pl-8 group";
+                let dot = t.status === "진행중" ? "bg-blue-500 ring-4 ring-blue-100" : (t.status === "완료" ? "bg-emerald-500" : "bg-slate-300");
+                const vigoArea = isAdminView ? `<textarea onblur="updateVigo(${id}, ${t.step}, this.value)" class="w-full p-2 text-[10px] bg-slate-50 border rounded-lg" rows="1" placeholder="특이사항 입력">${t.vigo}</textarea>` : `<div class="p-2 bg-slate-100 text-[10px] rounded min-h-[30px] border">${t.vigo || '특이사항 없음'}</div>`;
+                
+                const targetDate = new Date(openDate); targetDate.setDate(openDate.getDate() + t.day);
+                const timeDiff = targetDate.getTime() - today.getTime(); const diffDays = Math.ceil(timeDiff / (1000 * 60 * 60 * 24));
+                
+                let ddayBadgeHtml = "";
+                if (t.status === "완료") {
+                    ddayBadgeHtml = `<span class="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold ml-2 flex items-center gap-1"><i class="fa-solid fa-circle-check"></i> 완료</span>`;
+                } else {
+                    if (diffDays < 0) {
+                        ddayBadgeHtml = `<span class="bg-red-100 text-red-700 border border-red-300 text-[10px] px-2 py-0.5 rounded-full font-black ml-2 warn-pulse flex items-center gap-1"><i class="fa-solid fa-triangle-exclamation"></i> 기간초과! D+${Math.abs(diffDays)}</span>`;
+                    } else if (diffDays === 0) {
+                        ddayBadgeHtml = `<span class="bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black ml-2 warn-pulse flex items-center gap-1"><i class="fa-solid fa-bell"></i> 오늘 마감!</span>`;
+                    } else {
+                        ddayBadgeHtml = `<span class="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2 py-0.5 rounded-full font-bold ml-2">마감까지 ${diffDays}일 남음</span>`;
+                    }
+                }
+
+                let subHtml = "";
+                if(t.subChecks) {
+                    subHtml = `<div class="grid grid-cols-2 gap-2 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-100">`;
+                    t.subChecks.forEach(item => {
+                        const isChecked = (t.checkedItems || []).includes(item);
+                        subHtml += `<label class="flex items-center gap-2 cursor-pointer text-[10px] font-medium ${isChecked ? 'text-emerald-600' : 'text-slate-500'}">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleSubCheck(${id}, ${t.step}, '${item}')" class="w-3.5 h-3.5 rounded border-slate-300 text-emerald-600"> ${item}
+                        </label>`;
+                    });
+                    subHtml += `</div>`;
+                }
+
+                if(t.inputs) {
+                    subHtml = `<div class="grid grid-cols-2 gap-2 mt-3 p-3 bg-slate-50 rounded-lg border border-slate-100">`;
+                    t.inputs.forEach(field => {
+                        subHtml += `<div><label class="block text-[8px] text-slate-400 font-bold mb-0.5 uppercase">${field}</label>
+                        <input type="text" value="${t.formData?.[field] || ''}" onblur="updateFormData(${id}, ${t.step}, '${field}', this.value)" placeholder="${field} 기입" class="w-full p-2 text-[10px] border rounded bg-white"></div>`;
+                    });
+                    subHtml += `</div>`;
+                }
+
+                const control = t.step === 10 ? `
+                    <div class="flex justify-center items-center w-full h-full py-2">
+                        <label class="flex items-center gap-3 cursor-pointer bg-slate-100 border border-slate-300 px-6 py-3 rounded-xl hover:bg-emerald-50 hover:border-emerald-300 transition-all shadow-sm">
+                            <input type="checkbox" ${t.status === "완료" ? 'checked' : ''} onchange="handleFinalCheck(${id}, this)" class="w-5 h-5 text-emerald-600 border-slate-400 rounded cursor-pointer"> 
+                            <span class="text-xs font-black ${t.status === '완료' ? 'text-emerald-700' : 'text-slate-700'}">최종 개국 마감 체크</span>
+                        </label>
+                    </div>` : `
+                    <div class="status-btn-container shadow-sm">
+                        <button onclick="setStatus(${id}, ${t.step}, '대기')" class="status-btn ${t.status === '대기' ? 'bg-slate-600 text-white border-slate-600' : 'bg-white text-slate-400'}">대기</button>
+                        <button onclick="setStatus(${id}, ${t.step}, '진행중')" class="status-btn ${t.status === '진행중' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-400'}">진행중</button>
+                        <button onclick="setStatus(${id}, ${t.step}, '완료')" class="status-btn ${t.status === '완료' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-400'}">완료</button>
+                    </div>`;
+
+                node.innerHTML = `<span class="absolute -left-[9px] top-1.5 ${dot} text-white w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ring-4 ring-white z-10">${t.step === 10 ? '✔' : t.step - 1}</span>
+                <div class="flex flex-col md:flex-row md:items-stretch justify-between gap-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm ${t.status !== '완료' && diffDays <= 0 ? 'border-red-200 bg-red-50/10' : ''}">
+                    <div class="flex-1">
+                        <div class="flex items-center flex-wrap gap-1">
+                            <h4 class="font-bold text-sm ${t.status === '완료' ? 'text-slate-400 line-through' : ''}">${t.title}</h4>
+                            <span class="text-[9px] bg-slate-100 p-1 rounded font-normal text-slate-500">D${t.day >= 0 ? '+' : ''}${t.day}</span>
+                            ${ddayBadgeHtml}
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-1">${t.desc}</p>
+                        ${subHtml}
+                        <div class="mt-3 pt-2 border-t border-slate-50">${vigoArea}</div>
+                    </div>
+                    <div class="w-full md:w-52 shrink-0 flex flex-col justify-center">${control}</div>
+                </div>`;
+                container.appendChild(node);
+            });
+        }
+
+        function handleFinalCheck(id, checkbox) {
+            if (checkbox.checked) {
+                if (isAdminView) {
+                    setStatus(id, 10, '완료');
+                } else {
+                    const msg = "잠깐! 최종 개국 완료를 체크하시겠습니까?\n\n보안을 위해 기존 상세 행정 타임라인 및 비고 내역은 더 이상 조회할 수 없습니다.";
+                    if (confirm(msg)) {
+                        setStatus(id, 10, '완료');
+                    } else {
+                        checkbox.checked = false;
+                    }
+                }
+            } else {
+                setStatus(id, 10, '대기');
+            }
+        }
+
+        function toggleSubCheck(pid, step, item) {
+            const target = timelineMap[pid].find(x => x.step === step);
+            if(!target.checkedItems) target.checkedItems = [];
+            const idx = target.checkedItems.indexOf(item);
+            if(idx === -1) target.checkedItems.push(item); else target.checkedItems.splice(idx, 1);
+            save(); refresh();
+        }
+
+        function updateFormData(pid, step, field, val) {
+            const target = timelineMap[pid].find(x => x.step === step);
+            if(!target.formData) target.formData = {}; target.formData[field] = val; save();
+        }
+
+        function setStatus(id, step, s) { timelineMap[id].find(x => x.step === step).status = s; save(); refresh(); }
+        function updateVigo(id, step, v) { timelineMap[id].find(x => x.step === step).vigo = v; save(); }
+        function switchTarget(id) { activeId = id; refresh(); }
+        
+        function save() { 
+            // window 전역 동기화
+            window.masterPharmacies = masterPharmacies;
+            window.timelineMap = timelineMap;
+            // Firebase에 저장 (실시간 공유)
+            if (window.saveToFirebase) window.saveToFirebase();
+        }
+        
+        function saveChangesToMaster() {
+            const p = masterPharmacies.find(x => x.id === activeId);
+            if(p) { p.name = document.getElementById('edit-input-name').value; p.region = document.getElementById('edit-input-region').value; p.pharmacist = document.getElementById('edit-input-pharmacist').value; p.manager = document.getElementById('edit-input-manager').value; p.contractDate = document.getElementById('edit-input-contract-date').value; p.openDate = document.getElementById('edit-input-open-date').value; p.interior = document.getElementById('edit-input-interior').value; save(); alert("✅ 가맹점 정보가 성공적으로 업데이트되었습니다."); refresh(); }
+        }
+        
+        function addNewPharmacy() {
+            const n = document.getElementById('modal-name').value; const p = document.getElementById('modal-pharmacist').value; const m = document.getElementById('modal-manager').value; const o = document.getElementById('modal-open-date').value;
+            if(!n || !p || !m || !o) { alert("필수 정보를 입력하세요."); return; }
+            const nId = Date.now(); masterPharmacies.push({ id: nId, name: n, region: document.getElementById('modal-region').value, pharmacist: p, manager: m, contractDate: document.getElementById('modal-contract-date').value, openDate: o, interior: "" }); save(); closeModal(); activeId = nId; refresh();
+        }
+        
+        function copyLink(id) { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?id=${id}`).then(() => alert("🔗 해당 약사님 전용 실시간 페이지 링크가 복사되었습니다.")); }
+        function openCalPopup(dateStr, events) {
+            document.getElementById('cal-popup-date').innerText = dateStr;
+            const content = document.getElementById('cal-popup-content');
+            content.innerHTML = events.map(e => {
+                const c = e.status === '완료' ? '#10b981' : (e.status === '진행중' ? '#3b82f6' : '#94a3b8');
+                return `<div style="background:${c}15; border-left:3px solid ${c}; padding:10px 12px; border-radius:8px;">
+                    <div style="font-size:13px; font-weight:800; color:${c};">${e.title}</div>
+                    ${e.desc ? `<div style="font-size:11px; color:#64748b; margin-top:3px;">${e.desc}</div>` : ''}
+                    <div style="font-size:10px; font-weight:700; color:${c}; margin-top:4px; opacity:0.8;">${e.status || ''}</div>
+                </div>`;
+            }).join('');
+            document.getElementById('cal-popup').style.display = 'block';
+            document.getElementById('cal-popup-overlay').style.display = 'block';
+        }
+        function closeCalPopup() {
+            document.getElementById('cal-popup').style.display = 'none';
+            document.getElementById('cal-popup-overlay').style.display = 'none';
+        }
+
+        function openModal() { document.getElementById('register-modal').style.display='flex'; }
+        function closeModal() { document.getElementById('register-modal').style.display='none'; }
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // 서비스 워커 등록 전에 기존 캐시 모두 삭제
+                if ('caches' in window) {
+                    caches.keys().then(keys => {
+                        keys.forEach(key => caches.delete(key));
+                    });
+                }
+                // 기존 서비스 워커 unregister 후 재등록
+                navigator.serviceWorker.getRegistrations().then(registrations => {
+                    registrations.forEach(r => r.unregister());
+                });
+                navigator.serviceWorker.register('sw.js?v=20260529')
+                    .then(reg => console.log('SW 등록 완료:', reg.scope))
+                    .catch(err => console.log('SW 등록 실패:', err));
+            });
+        }
+    </script>
+</body>
+</html>
