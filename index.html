@@ -3814,8 +3814,35 @@
         //    예) 2026년 7월 명단 = 2025-07, 2024-07, 2023-07 ... 에 오픈한 약국 전체
         //  · 올해 오픈한 약국은 아직 첫 기념일이 안 왔으므로 제외됨 (내년부터 등장)
         // ─────────────────────────────────────────────────────────────
+        // 오픈일에서 연/월을 안전하게 뽑아낸다.
+        //  · <input type="date">로 넣은 값은 항상 YYYY-MM-DD지만, 엑셀 업로드로 들어온 값은
+        //    2023-7-5 / 2023.7.5 / 20230705 처럼 0패딩이나 구분자가 다를 수 있다.
+        //    단순 slice로 자르면 이런 값이 조용히 명단에서 빠져 선물을 못 받는 약국이 생긴다.
+        //  · 파싱 불가 시 null을 돌려주고, 호출부에서 별도로 집계해 사용자에게 알린다.
+        window.parseOpenYM = function(v){
+            const s = String(v==null?'':v).trim();
+            if(!s) return null;
+            // 구분자(-, /, .) 형태
+            let m = s.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?/);
+            if(m){
+                const y=+m[1], mo=+m[2];
+                if(mo>=1 && mo<=12) return {y, m:mo};
+                return null;
+            }
+            // 구분자 없는 8자리(YYYYMMDD)
+            m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+            if(m){
+                const y=+m[1], mo=+m[2];
+                if(mo>=1 && mo<=12) return {y, m:mo};
+                return null;
+            }
+            // 그 외에는 표준 파서에 맡김 (Date 객체/ISO 문자열 등)
+            const d = window.safeDate(s);
+            if(!isNaN(d.getTime())) return {y:d.getFullYear(), m:d.getMonth()+1};
+            return null;
+        };
+
         window.getAnniversaryList = function(year, month){
-            const mm = String(month).padStart(2,'0');
             const members = (window.memberList||[]).filter(r=>!r._deleted);
             // 개설행정은 memberId → 레코드 Map으로 미리 만들어 둔다.
             // 회원마다 find()로 훑으면 회원수×개설행정수 만큼 비교가 일어나 데이터가 늘수록 급격히 느려진다.
@@ -3826,18 +3853,20 @@
             });
 
             const rows = [];
+            const skipped = { badDate:0, noAddr:0, noPharmacy:0 };
             members.forEach(r=>{
                 const pharmacy = (r.pharmacy||'').trim();
                 const addr     = (r.address||'').trim();
                 const open     = (r.openDate||'').trim();
                 // 필수값 3종
                 if(!pharmacy || pharmacy==='약국명미정') return;
-                if(!addr) return;
-                if(!open || open.length < 7) return;
-                // 오픈월 일치 + 올해보다 이전에 오픈(=기념일이 최소 1회 도래)
-                const oy = parseInt(open.slice(0,4)), om = open.slice(5,7);
-                if(isNaN(oy) || om !== mm) return;
-                if(oy >= year) return;
+                if(!addr){ if(open) skipped.noAddr++; return; }
+                if(!open) return;
+
+                const ym = window.parseOpenYM(open);
+                if(!ym){ skipped.badDate++; return; }   // 형식이 깨진 오픈일 — 사용자에게 알림
+                if(ym.m !== month) return;
+                if(ym.y >= year) return;                // 올해 오픈은 내년부터 기념일
 
                 // 개설행정 상태 확인 — 기록이 없으면 통과(이미 오픈한 약국이므로)
                 // memberId는 등록 시기에 따라 문자열/숫자가 섞일 수 있어 String으로 통일 비교
@@ -3851,10 +3880,11 @@
                     pharmacy,
                     name: (r.name||'').trim(),
                     openDate: open,
-                    years: year - oy,
+                    years: year - ym.y,
                 });
             });
             rows.sort((a,b)=> b.years-a.years || a.pharmacy.localeCompare(b.pharmacy,'ko'));
+            rows._skipped = skipped;
             return rows;
         };
 
@@ -3901,6 +3931,19 @@
             </div>
 
             ${yearKeys.length? `<div class="flex flex-wrap gap-1.5 mb-3">${yearKeys.map(k=>`<span class="text-[10px] bg-slate-100 text-slate-600 rounded-full px-2.5 py-1 font-bold">${k}주년 ${byYears[k]}곳</span>`).join('')}</div>`:''}
+
+            ${(()=>{
+                const s = rows._skipped || {};
+                const parts = [];
+                if(s.badDate>0) parts.push(`오픈일 형식이 올바르지 않은 <b>${s.badDate}건</b>`);
+                if(s.noAddr>0)  parts.push(`주소가 비어 있는 <b>${s.noAddr}건</b>`);
+                if(!parts.length) return '';
+                return `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3 text-[11px] text-amber-800 leading-relaxed">
+                    <i class="fa-solid fa-triangle-exclamation mr-1"></i><b>확인 필요</b> —
+                    ${parts.join(', ')}이 있어 조회 대상에서 빠졌습니다.
+                    해당 월 약국이라면 명단에 누락될 수 있으니 가입자관리에서 값을 채워주세요.
+                </div>`;
+            })()}
 
             ${rows.length===0
                 ? `<div class="bg-slate-50 rounded-xl border p-8 text-center text-xs text-slate-400">
