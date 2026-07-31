@@ -379,6 +379,9 @@
         .int-month-scroll::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
         .int-month-scroll::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
         .int-month-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        /* 개국 기념일 명단: 약국명이 길어도 가로 스크롤 대신 줄바꿈으로 처리(모바일 가독성) */
+        table.anniv-table td:nth-child(2), table.anniv-table th:nth-child(2),
+        table.anniv-table td:nth-child(3), table.anniv-table th:nth-child(3) { white-space: normal; word-break: keep-all; }
         @keyframes pulse-red { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
         .warn-pulse { animation: pulse-red 2s infinite; }
         html.modal-open, body.modal-open { overflow: hidden !important; height: 100% !important; }
@@ -2682,8 +2685,15 @@
         // 실입금액 계산: joinPaid 필드는 거의 입력되지 않고(전체 회원 중 2건만 사용),
         // 실제로는 payment(완납/분납중)+paymentRemain(미수금)으로 입력되는 것이 현실 데이터 패턴.
         // → 미수금 정보가 있으면 "가입비-미수금"으로 계산, 없으면 레거시 joinPaid 필드로 폴백.
+        // 실입금 계산 우선순위:
+        //  ① 납입상태가 '완납'이면 전액 입금 (레거시 데이터는 joinPaid가 비어있어 0으로 잡히던 문제 해결)
+        //  ② 납입상태가 '면제'면 0
+        //  ③ 미수금(paymentRemain)이 있으면 "가입비 − 미수금"
+        //  ④ 그 외에는 레거시 joinPaid 필드
         window.computeJoinPaid = function computeJoinPaid(r) {
             const fee = parseFloat(r.joinFee||0);
+            if (r.payment === '완납') return fee;
+            if (r.payment === '면제') return 0;
             const remain = r.paymentRemain!==undefined && r.paymentRemain!=='' ? parseFloat(r.paymentRemain) : NaN;
             if (!isNaN(remain)) return Math.max(0, fee - remain);
             return parseFloat(r.joinPaid||0);
@@ -3296,47 +3306,95 @@
             <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-4">
                 <p class="text-xs font-bold text-blue-700 mb-2"><i class="fa-solid fa-won-sign mr-1"></i>가입비 현황</p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-center">
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-slate-400 font-bold truncate">전체 가입금액</p><p class="text-xs sm:text-sm font-black text-slate-700 truncate">${window.fmtAmt(totalFee)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">실 입금액</p><p class="text-xs sm:text-sm font-black text-emerald-700 truncate">${window.fmtAmt(totalPaid)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border border-amber-200 min-w-0"><p class="text-[9px] text-amber-600 font-bold truncate">미수금</p><p class="text-xs sm:text-sm font-black text-amber-600 truncate">${window.fmtAmt(totalRemain)}</p><p class="text-[8px] text-slate-400 truncate">${totalFee>0?Math.round(totalRemain/totalFee*100):0}% 미납</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-xs sm:text-sm font-black text-purple-600 truncate">-${window.fmtAmt(totalPoint)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-slate-400 font-bold truncate">전체 가입금액</p><p class="text-[11px] sm:text-sm font-black text-slate-700 break-keep leading-tight">${window.fmtAmt(totalFee)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">실 입금액</p><p class="text-[11px] sm:text-sm font-black text-emerald-700 break-keep leading-tight">${window.fmtAmt(totalPaid)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border border-amber-200 min-w-0"><p class="text-[9px] text-amber-600 font-bold truncate">미수금</p><p class="text-[11px] sm:text-sm font-black text-amber-600 break-keep leading-tight">${window.fmtAmt(totalRemain)}</p><p class="text-[8px] text-slate-400 truncate">${totalFee>0?Math.round(totalRemain/totalFee*100):0}% 미납</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-[11px] sm:text-sm font-black text-purple-600 break-keep leading-tight">-${window.fmtAmt(totalPoint)}</p></div>
                 </div>
-                <div class="mt-2 bg-white rounded-lg p-2.5 border border-blue-200 flex items-center justify-between gap-2">
+                <div class="mt-2 bg-white rounded-lg p-2.5 border border-blue-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-blue-700">실마진 <span class="text-slate-400 font-normal">(실입금 − 포인트)</span></p>
-                        <p class="text-[9px] text-slate-400">가맹비 할인 누적 ${window.fmtAmt(totalDiscount)} · 가입금액에 이미 반영</p>
+                        <p class="text-[9px] text-slate-400 leading-tight">가맹비 할인 누적 ${window.fmtAmt(totalDiscount)} · 가입금액에 이미 반영</p>
                     </div>
-                    <p class="text-sm sm:text-base font-black text-blue-700 flex-shrink-0">${window.fmtAmt(totalPaid-totalPoint)}</p>
+                    <p class="text-base font-black text-blue-700 flex-shrink-0 text-right sm:text-left">${window.fmtAmt(totalPaid-totalPoint)}</p>
                 </div>
             </div>
             <div class="mb-4">
                 <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-blue-500 mr-1"></i>월별 가입비 매출 (최근 6개월)</p>
-                <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[620px]">
-                    <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
-                        <th class="p-2 text-left">월</th><th class="p-2 text-center">가입자</th><th class="p-2 text-right">총 가입금액</th><th class="p-2 text-right text-emerald-600">실 입금액</th><th class="p-2 text-right text-amber-600">미수금</th><th class="p-2 text-right text-slate-400">가맹비 할인</th><th class="p-2 text-right text-purple-600">포인트 지급</th><th class="p-2 text-right text-blue-700">실마진</th>
-                    </tr></thead>
-                    <tbody class="divide-y">${sortedM.map(m=>`<tr class="hover:bg-slate-50">
-                        <td class="p-2 font-bold">${m.slice(2)}</td>
-                        <td class="p-2 text-center font-bold text-blue-600">${monthlyMember[m]||0}명</td>
-                        <td class="p-2 text-right font-bold text-slate-700">${window.fmtAmt((monthlyFee[m]||0))}</td>
-                        <td class="p-2 text-right font-bold text-emerald-600">${window.fmtAmt((monthlyPaid[m]||0))}</td>
-                        <td class="p-2 text-right font-bold text-amber-600">${(monthlyRemain[m]||0)>0?window.fmtAmt(monthlyRemain[m]):'<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-2 text-right font-bold text-slate-400">${(monthlyDiscount[m]||0)>0?window.fmtAmt(monthlyDiscount[m]):'<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-2 text-right font-bold text-purple-600">${(monthlyPoint[m]||0)>0?'-'+window.fmtAmt(monthlyPoint[m]):'<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-2 text-right font-black text-blue-700">${window.fmtAmt((monthlyPaid[m]||0)-(monthlyPoint[m]||0))}</td>
-                    </tr>`).join('')}
-                    <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
-                        <td class="p-2 text-blue-800">합계</td>
-                        <td class="p-2 text-center text-blue-700">${sortedM.reduce((s,m)=>s+(monthlyMember[m]||0),0)}명</td>
-                        <td class="p-2 text-right text-slate-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyFee[m]||0),0))}</td>
-                        <td class="p-2 text-right text-emerald-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPaid[m]||0),0))}</td>
-                        <td class="p-2 text-right text-amber-700">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyRemain[m]||0),0))}</td>
-                        <td class="p-2 text-right text-slate-500">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyDiscount[m]||0),0))}</td>
-                        <td class="p-2 text-right text-purple-800">-${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPoint[m]||0),0))}</td>
-                        <td class="p-2 text-right text-blue-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPaid[m]||0)-(monthlyPoint[m]||0),0))}</td>
-                    </tr>
-                    </tbody>
-                </table></div>
+                ${(()=>{
+                    const isMobV = window.innerWidth < 640;
+                    const g=(o,m)=>o[m]||0;
+                    const dash='<span class="text-slate-300">-</span>';
+                    const sum=o=>sortedM.reduce((s,m)=>s+g(o,m),0);
+                    const netOf=m=>g(monthlyPaid,m)-g(monthlyPoint,m);
+
+                    // ── 모바일: 월별 카드 (가로 스크롤 없음) ──
+                    if(isMobV){
+                        return `<div class="space-y-2">${sortedM.map(m=>`
+                            <div class="bg-white rounded-xl border overflow-hidden">
+                                <div class="bg-slate-50 px-3 py-1.5 border-b flex items-center justify-between">
+                                    <span class="text-sm font-black text-slate-700">${m.slice(2)}</span>
+                                    <span class="text-[10px] font-bold text-blue-600">${g(monthlyMember,m)}명</span>
+                                </div>
+                                <div class="px-3 py-2 space-y-1 text-[11px]">
+                                    <div class="flex justify-between"><span class="text-slate-400">총 가입금액</span><span class="font-bold text-slate-700">${window.fmtAmt(g(monthlyFee,m))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">실 입금액</span><span class="font-bold text-emerald-600">${window.fmtAmt(g(monthlyPaid,m))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">미수금</span><span class="font-bold text-amber-600">${g(monthlyRemain,m)>0?window.fmtAmt(g(monthlyRemain,m)):dash}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">가맹비 할인</span><span class="font-bold text-slate-400">${g(monthlyDiscount,m)>0?window.fmtAmt(g(monthlyDiscount,m)):dash}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-400">포인트 지급</span><span class="font-bold text-purple-600">${g(monthlyPoint,m)>0?'-'+window.fmtAmt(g(monthlyPoint,m)):dash}</span></div>
+                                    <div class="flex justify-between border-t pt-1 mt-1"><span class="font-bold text-blue-700">실마진</span><span class="font-black text-blue-700">${window.fmtAmt(netOf(m))}</span></div>
+                                </div>
+                            </div>`).join('')}
+                            <div class="bg-blue-50 rounded-xl border-2 border-blue-200 px-3 py-2">
+                                <div class="flex items-center justify-between mb-1"><span class="text-sm font-black text-blue-800">합계</span><span class="text-[10px] font-bold text-blue-700">${sum(monthlyMember)}명</span></div>
+                                <div class="space-y-1 text-[11px]">
+                                    <div class="flex justify-between"><span class="text-slate-500">총 가입금액</span><span class="font-bold text-slate-800">${window.fmtAmt(sum(monthlyFee))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-500">실 입금액</span><span class="font-bold text-emerald-700">${window.fmtAmt(sum(monthlyPaid))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-500">미수금</span><span class="font-bold text-amber-700">${window.fmtAmt(sum(monthlyRemain))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-500">가맹비 할인</span><span class="font-bold text-slate-500">${window.fmtAmt(sum(monthlyDiscount))}</span></div>
+                                    <div class="flex justify-between"><span class="text-slate-500">포인트 지급</span><span class="font-bold text-purple-800">-${window.fmtAmt(sum(monthlyPoint))}</span></div>
+                                    <div class="flex justify-between border-t border-blue-200 pt-1 mt-1"><span class="font-black text-blue-800">실마진</span><span class="font-black text-blue-800">${window.fmtAmt(sum(monthlyPaid)-sum(monthlyPoint))}</span></div>
+                                </div>
+                            </div>
+                        </div>`;
+                    }
+
+                    // ── 데스크탑: 압축 표 + 실마진 컬럼 우측 고정(sticky) ──
+                    const th='px-1.5 py-2 whitespace-nowrap', td='px-1.5 py-2 whitespace-nowrap';
+                    return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-[11px] border-collapse min-w-[560px]">
+                        <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
+                            <th class="${th} text-left">월</th>
+                            <th class="${th} text-center">가입자</th>
+                            <th class="${th} text-right">가입금액</th>
+                            <th class="${th} text-right text-emerald-600">실입금</th>
+                            <th class="${th} text-right text-amber-600">미수금</th>
+                            <th class="${th} text-right text-slate-400">할인</th>
+                            <th class="${th} text-right text-purple-600">포인트</th>
+                            <th class="${th} text-right text-blue-700 sticky right-0 bg-slate-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">실마진</th>
+                        </tr></thead>
+                        <tbody class="divide-y">${sortedM.map(m=>`<tr class="hover:bg-slate-50 group">
+                            <td class="${td} font-bold">${m.slice(2)}</td>
+                            <td class="${td} text-center font-bold text-blue-600">${g(monthlyMember,m)}명</td>
+                            <td class="${td} text-right font-bold text-slate-700">${window.fmtAmt(g(monthlyFee,m))}</td>
+                            <td class="${td} text-right font-bold text-emerald-600">${window.fmtAmt(g(monthlyPaid,m))}</td>
+                            <td class="${td} text-right font-bold text-amber-600">${g(monthlyRemain,m)>0?window.fmtAmt(g(monthlyRemain,m)):dash}</td>
+                            <td class="${td} text-right font-bold text-slate-400">${g(monthlyDiscount,m)>0?window.fmtAmt(g(monthlyDiscount,m)):dash}</td>
+                            <td class="${td} text-right font-bold text-purple-600">${g(monthlyPoint,m)>0?'-'+window.fmtAmt(g(monthlyPoint,m)):dash}</td>
+                            <td class="${td} text-right font-black text-blue-700 sticky right-0 bg-white group-hover:bg-slate-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">${window.fmtAmt(netOf(m))}</td>
+                        </tr>`).join('')}
+                        <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
+                            <td class="${td} text-blue-800">합계</td>
+                            <td class="${td} text-center text-blue-700">${sum(monthlyMember)}명</td>
+                            <td class="${td} text-right text-slate-800">${window.fmtAmt(sum(monthlyFee))}</td>
+                            <td class="${td} text-right text-emerald-800">${window.fmtAmt(sum(monthlyPaid))}</td>
+                            <td class="${td} text-right text-amber-700">${window.fmtAmt(sum(monthlyRemain))}</td>
+                            <td class="${td} text-right text-slate-500">${window.fmtAmt(sum(monthlyDiscount))}</td>
+                            <td class="${td} text-right text-purple-800">-${window.fmtAmt(sum(monthlyPoint))}</td>
+                            <td class="${td} text-right text-blue-800 sticky right-0 bg-blue-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">${window.fmtAmt(sum(monthlyPaid)-sum(monthlyPoint))}</td>
+                        </tr>
+                        </tbody>
+                    </table></div>`;
+                })()}
                 <p class="text-[9px] text-slate-400 mt-1.5">※ 가맹비 할인은 가입금액에 이미 반영된 금액입니다. 실마진에서 중복 차감하지 않습니다.</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
@@ -3597,7 +3655,11 @@
             const fmtM=m=>m.slice(2);
 
             const bCard=rows=>`<div class="space-y-2">${sM.map(m=>{const d=md[m];return`<div class="bg-slate-50 rounded-xl border overflow-hidden"><div class="bg-indigo-50 px-3 py-2 border-b"><span class="text-sm font-black text-indigo-700">${fmtM(m)}</span></div><div class="p-3 grid grid-cols-1 gap-y-1.5 text-xs divide-y divide-slate-100">${rows(d,m).map(([l,v,c])=>`<div class="flex justify-between items-center gap-2 pt-1.5 first:pt-0"><span class="text-slate-400 flex-shrink-0">${l}</span><span class="font-bold text-right ${c||''}">${v}</span></div>`).join('')}</div></div>`;}).join('')}</div>`;
-            const bTable=(hs,rows,totalsRow)=>`<div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[500px]"><thead><tr class="bg-indigo-50 border-b text-[10px] text-slate-500 font-bold"><th class="p-2 text-left">월</th>${hs.map(([h,c])=>`<th class="p-2 text-center ${c}">${h}</th>`).join('')}</tr></thead><tbody class="divide-y">${sM.map(m=>{const d=md[m];return`<tr class="hover:bg-slate-50"><td class="p-2 font-bold">${fmtM(m)}</td>${rows(d,m).map(([v,c])=>`<td class="p-2 text-center font-bold ${c||''}">${v}</td>`).join('')}</tr>`;}).join('')}${totalsRow?`<tr class="bg-indigo-50 border-t-2 border-indigo-200 font-black"><td class="p-2 text-indigo-800">합계</td>${totalsRow.map(([v,c])=>`<td class="p-2 text-center ${c||''}">${v}</td>`).join('')}</tr>`:''}</tbody></table></div>`;
+            const bTable=(hs,rows,totalsRow)=>{
+                const last=hs.length-1;
+                const sticky='sticky right-0 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]';
+                return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-xs border-collapse min-w-[520px]"><thead><tr class="bg-indigo-50 border-b text-[10px] text-slate-500 font-bold"><th class="p-2 text-left">월</th>${hs.map(([h,c],i)=>`<th class="p-2 text-center ${c} ${i===last?sticky+' bg-indigo-50':''}">${h}</th>`).join('')}</tr></thead><tbody class="divide-y">${sM.map(m=>{const d=md[m];return`<tr class="hover:bg-slate-50 group"><td class="p-2 font-bold">${fmtM(m)}</td>${rows(d,m).map(([v,c],i)=>`<td class="p-2 text-center font-bold ${c||''} ${i===last?sticky+' bg-white group-hover:bg-slate-50':''}">${v}</td>`).join('')}</tr>`;}).join('')}${totalsRow?`<tr class="bg-indigo-50 border-t-2 border-indigo-200 font-black"><td class="p-2 text-indigo-800">합계</td>${totalsRow.map(([v,c],i)=>`<td class="p-2 text-center ${c||''} ${i===last?sticky+' bg-indigo-50':''}">${v}</td>`).join('')}</tr>`:''}</tbody></table></div>`;
+            };
 
             const content=document.getElementById('dashboard-content');
             content.innerHTML=`
@@ -3746,7 +3808,8 @@
                 if(oy >= year) return;
 
                 // 개설행정 상태 확인 — 기록이 없으면 통과(이미 오픈한 약국이므로)
-                const adm = admins.find(p => p.memberId === r.id);
+                // memberId는 등록 시기에 따라 문자열/숫자가 섞일 수 있어 String으로 통일 비교
+                const adm = admins.find(p => p.memberId!=null && String(p.memberId) === String(r.id));
                 if(adm){
                     if(adm.setupStatus==='보류' || adm.setupStatus==='중단') return;
                     // 진행중(아직 완료 안 됨)이면 제외
@@ -3793,14 +3856,14 @@
 
             document.getElementById('dashboard-content').innerHTML = `
             <div class="flex flex-wrap items-center gap-2 mb-3">
-                <select id="anniv-year" onchange="changeAnniv(this.value, document.getElementById('anniv-month').value)" class="text-xs border rounded-lg px-2 py-1.5">
+                <select id="anniv-year" onchange="changeAnniv(this.value, document.getElementById('anniv-month').value)" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0">
                     ${years.map(v=>`<option value="${v}" ${v===y?'selected':''}>${v}년</option>`).join('')}
                 </select>
-                <select id="anniv-month" onchange="changeAnniv(document.getElementById('anniv-year').value, this.value)" class="text-xs border rounded-lg px-2 py-1.5">
+                <select id="anniv-month" onchange="changeAnniv(document.getElementById('anniv-year').value, this.value)" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0">
                     ${Array.from({length:12},(_,i)=>i+1).map(v=>`<option value="${v}" ${v===m?'selected':''}>${v}월</option>`).join('')}
                 </select>
-                <span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2.5 py-1.5 font-bold">${rows.length}곳</span>
-                <button onclick="downloadAnniversaryExcel()" class="ml-auto text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">
+                <span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2.5 py-1.5 font-bold flex-shrink-0">${rows.length}곳</span>
+                <button onclick="downloadAnniversaryExcel()" class="w-full sm:w-auto sm:ml-auto text-xs bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold px-3 py-2 sm:py-1.5 rounded-lg whitespace-nowrap">
                     <i class="fa-solid fa-file-excel mr-1"></i>엑셀 다운로드
                 </button>
             </div>
@@ -3812,15 +3875,15 @@
                      ${y}년 ${m}월에 기념일을 맞는 약국이 없습니다.<br>
                      <span class="text-[10px]">${y}년에 오픈한 약국은 내년부터 명단에 표시됩니다.</span>
                    </div>`
-                : `<div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[420px]">
+                : `<div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse anniv-table">
                     <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
-                        <th class="p-2 text-left w-8">#</th><th class="p-2 text-left">약국명</th><th class="p-2 text-left w-24">약사명</th><th class="p-2 text-center w-20">연차</th>
+                        <th class="px-1.5 py-2 text-left w-7">#</th><th class="px-1.5 py-2 text-left">약국명</th><th class="px-1.5 py-2 text-left w-16 sm:w-24">약사명</th><th class="px-1.5 py-2 text-center w-16 sm:w-20">연차</th>
                     </tr></thead>
                     <tbody class="divide-y">${rows.map((r,i)=>`<tr class="hover:bg-slate-50">
-                        <td class="p-2 text-slate-300">${i+1}</td>
-                        <td class="p-2 font-bold text-slate-700">${r.pharmacy}</td>
-                        <td class="p-2 text-slate-600">${r.name||'-'}</td>
-                        <td class="p-2 text-center"><span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 font-bold">${r.years}주년</span></td>
+                        <td class="px-1.5 py-2 text-slate-300">${i+1}</td>
+                        <td class="px-1.5 py-2 font-bold text-slate-700">${r.pharmacy}</td>
+                        <td class="px-1.5 py-2 text-slate-600">${r.name||'-'}</td>
+                        <td class="px-1.5 py-2 text-center"><span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5 font-bold whitespace-nowrap">${r.years}주년</span></td>
                     </tr>`).join('')}</tbody>
                 </table></div>`}
 
@@ -4832,7 +4895,15 @@
             if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
             const box = modal.querySelector('div');
             const keepTop = box ? box.scrollTop : 0;     // 보던 위치 유지
-            try { window._openDashboardFn(); } catch(e) { console.error('대시보드 갱신 실패', e); }
+            // ★ 갱신은 "다시 그리기"일 뿐 "다시 열기"가 아니다.
+            //   대시보드 함수들이 끝에서 pushModalNav/lockBodyScroll을 호출하는데,
+            //   갱신 때마다 그게 실행되면 (1) 히스토리가 쌓여 뒤로가기를 여러 번 눌러야 하고
+            //   (2) 이미 잠긴 상태에서 scrollY가 0이라 복귀 위치를 잃는다. 갱신 동안만 무력화.
+            const _push = window.pushModalNav, _lock = window.lockBodyScroll;
+            window.pushModalNav = function(){}; window.lockBodyScroll = function(){};
+            try { window._openDashboardFn(); }
+            catch(e) { console.error('대시보드 갱신 실패', e); }
+            finally { window.pushModalNav = _push; window.lockBodyScroll = _lock; }
             if (box) box.scrollTop = keepTop;
         };
 
