@@ -549,6 +549,18 @@
                 min-width: 0;
             }
 
+            /* 개국 기념일 명단: 월 1회 집중 조작 화면이라 연/월 선택과 다운로드 버튼만
+               터치하기 편한 크기로 키운다(앱 전역 필터 관례는 그대로 둠) */
+            #anniv-year, #anniv-month {
+                min-height: 40px !important;
+                font-size: 13px !important;
+                padding: 8px 10px !important;
+            }
+            #dashboard-content button[onclick*="downloadAnniversary"] {
+                min-height: 44px !important;
+                font-size: 13px !important;
+            }
+
             /* 헤더 제목 영역 */
             h2.text-base, h2.text-lg { font-size: 14px !important; }
 
@@ -882,7 +894,7 @@
                     <button onclick="toggleDeletedPharmacies(this)" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 transition-all whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-trash-can-arrow-up mr-1"></i><span class="inline"> 삭제보관함</span>
                     </button>
-                    <input id="master-search" type="text" placeholder="검색" oninput="renderList()" class="text-xs border rounded-lg px-2 py-1.5 w-20 sm:w-28 flex-shrink-0">
+                    <input id="master-search" type="text" placeholder="검색" oninput="debounceSearch('master',renderList)" class="text-xs border rounded-lg px-2 py-1.5 w-20 sm:w-28 flex-shrink-0">
                 </div>
             </div>
             <div class="overflow-x-auto no-scrollbar">
@@ -1053,7 +1065,7 @@
                     <button id="consult-hide-btn" onclick="toggleConsultCompleted()" class="text-[10px] border rounded-lg px-2 py-1.5 whitespace-nowrap flex-shrink-0 bg-blue-50 text-blue-600 border-blue-200">
                         <i class="fa-regular fa-eye mr-1"></i><span class="inline"> 완료·취소 보기</span>
                     </button>
-                    <select id="consult-month-filter" onchange="changePage_reset('consult');renderConsults()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="consult-search" type="text" placeholder="검색" oninput="changePage_reset('consult');renderConsults()" class="text-xs border rounded-lg px-2 py-1.5 w-24 sm:w-28 flex-shrink-0">
+                    <select id="consult-month-filter" onchange="changePage_reset('consult');renderConsults()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="consult-search" type="text" placeholder="검색" oninput="debounceSearch('consult',()=>{changePage_reset('consult');renderConsults();})" class="text-xs border rounded-lg px-2 py-1.5 w-24 sm:w-28 flex-shrink-0">
                     <button onclick="toggleDeletedConsults(this)" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-trash-can-arrow-up mr-1"></i><span class="inline"> 삭제보관함</span>
                     </button>
@@ -1162,7 +1174,7 @@
                         <option value="준회원">준회원</option>
                         <option value="약사회원">약사회원</option>
                     </select>
-                    <select id="member-month-filter" onchange="changePage_reset('member');renderMembers()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="member-search" type="text" placeholder="검색" oninput="changePage_reset('member');renderMembers()" class="text-xs border rounded-lg px-2 py-1.5 w-32 sm:w-40 flex-shrink-0">
+                    <select id="member-month-filter" onchange="changePage_reset('member');renderMembers()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="member-search" type="text" placeholder="검색" oninput="debounceSearch('member',()=>{changePage_reset('member');renderMembers();})" class="text-xs border rounded-lg px-2 py-1.5 w-32 sm:w-40 flex-shrink-0">
                     <button id="btn-member-archive" onclick="setMemberTrashTab('archive')" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-box-archive mr-1"></i>아카이브
                     </button>
@@ -1290,7 +1302,7 @@
                         <i class="fa-regular fa-eye mr-1"></i><span class="inline"> 완료·미진행 보기</span>
                     </button>
                     <select id="interior-month-filter" onchange="changePage_reset('interior');renderInteriors()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select>
-                    <input id="int-search" type="text" placeholder="검색" oninput="changePage_reset('interior');renderInteriors()" class="text-xs border rounded-lg px-2 py-1.5 w-20 sm:w-24 flex-shrink-0">
+                    <input id="int-search" type="text" placeholder="검색" oninput="debounceSearch('interior',()=>{changePage_reset('interior');renderInteriors();})" class="text-xs border rounded-lg px-2 py-1.5 w-20 sm:w-24 flex-shrink-0">
                     <button onclick="toggleDeletedInteriors(this)" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-trash-can-arrow-up mr-1"></i><span class="inline"> 삭제보관함</span>
                     </button>
@@ -1376,7 +1388,7 @@
                     <button onclick="showPosDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-chart-bar mr-1"></i><span class="text-[9px] sm:text-xs">대시보드</span>
                     </button>
-                    <select id="pos-month-filter" onchange="changePage_reset('pos_v1');changePage_reset('pos_v2');renderPos()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="pos-search" type="text" placeholder="검색" oninput="changePage_reset('pos_v1');changePage_reset('pos_v2');renderPos()" class="text-xs border rounded-lg px-2 py-1.5 w-28 sm:w-40 flex-shrink-0">
+                    <select id="pos-month-filter" onchange="changePage_reset('pos_v1');changePage_reset('pos_v2');renderPos()" class="text-xs border rounded-lg px-2 py-1.5 flex-shrink-0"><option value="">월 전체</option></select><input id="pos-search" type="text" placeholder="검색" oninput="debounceSearch('pos',()=>{changePage_reset('pos_v1');changePage_reset('pos_v2');renderPos();})" class="text-xs border rounded-lg px-2 py-1.5 w-28 sm:w-40 flex-shrink-0">
                     <button onclick="toggleDeletedPos(this)" class="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold px-3 py-1.5 rounded-lg border border-slate-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-trash-can-arrow-up mr-1"></i><span class="inline"> 삭제보관함</span>
                     </button>
@@ -2698,8 +2710,17 @@
             if (!isNaN(remain)) return Math.max(0, fee - remain);
             return parseFloat(r.joinPaid||0);
         };
-        window.fmtAmt = function fmtAmt(n) {
-            if (!n && n !== 0) return '0만원';
+        // ── 검색 입력 디바운스 ──
+        // 검색창은 oninput마다 목록 전체를 다시 필터·정렬하고 innerHTML을 통째로 교체한다.
+        // 회원 622명 기준 키 1타당 8천여 회의 문자열 비교 + DOM 재생성이 일어나 모바일에서
+        // 입력이 밀리는 원인이 된다. 마지막 입력 후 200ms 뒤 1회만 실행되도록 묶는다.
+        const _searchTimers = {};
+        window.debounceSearch = function(key, fn, delay){
+            clearTimeout(_searchTimers[key]);
+            _searchTimers[key] = setTimeout(fn, delay || 200);
+        };
+
+        window.fmtAmt = function fmtAmt(n) {            if (!n && n !== 0) return '0만원';
             const num = Math.round(Number(n));
             if (isNaN(num)) return '0만원';
             if (num < 10000) return num.toLocaleString() + '만원';
@@ -3306,10 +3327,10 @@
             <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-4">
                 <p class="text-xs font-bold text-blue-700 mb-2"><i class="fa-solid fa-won-sign mr-1"></i>가입비 현황</p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-center">
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-slate-400 font-bold truncate">전체 가입금액</p><p class="text-[11px] sm:text-sm font-black text-slate-700 break-keep leading-tight">${window.fmtAmt(totalFee)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">실 입금액</p><p class="text-[11px] sm:text-sm font-black text-emerald-700 break-keep leading-tight">${window.fmtAmt(totalPaid)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border border-amber-200 min-w-0"><p class="text-[9px] text-amber-600 font-bold truncate">미수금</p><p class="text-[11px] sm:text-sm font-black text-amber-600 break-keep leading-tight">${window.fmtAmt(totalRemain)}</p><p class="text-[8px] text-slate-400 truncate">${totalFee>0?Math.round(totalRemain/totalFee*100):0}% 미납</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-[11px] sm:text-sm font-black text-purple-600 break-keep leading-tight">-${window.fmtAmt(totalPoint)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-slate-400 font-bold truncate">전체 가입금액</p><p class="text-[11px] sm:text-sm font-black text-slate-700 truncate leading-tight">${window.fmtAmt(totalFee)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">실 입금액</p><p class="text-[11px] sm:text-sm font-black text-emerald-700 truncate leading-tight">${window.fmtAmt(totalPaid)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border border-amber-200 min-w-0"><p class="text-[9px] text-amber-600 font-bold truncate">미수금</p><p class="text-[11px] sm:text-sm font-black text-amber-600 truncate leading-tight">${window.fmtAmt(totalRemain)}</p><p class="text-[8px] text-slate-400 truncate">${totalFee>0?Math.round(totalRemain/totalFee*100):0}% 미납</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-[11px] sm:text-sm font-black text-purple-600 truncate leading-tight">-${window.fmtAmt(totalPoint)}</p></div>
                 </div>
                 <div class="mt-2 bg-white rounded-lg p-2.5 border border-blue-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
                     <div class="min-w-0">
@@ -3578,15 +3599,19 @@
             const chMap={};consults.forEach(r=>{const k=r.channel||'기타';chMap[k]=(chMap[k]||0)+1;});
             const topCh=Object.entries(chMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
             const cM=(e,r)=>Math.round((parseFloat(e)||0)*(parseFloat(r)||0)/100);
-            const tFee=members.reduce((s,r)=>s+(parseFloat(r.joinFee||0)),0);
-            const tPaid=members.reduce((s,r)=>s+window.computeJoinPaid(r),0);
-            const tDisc=members.reduce((s,r)=>s+(parseFloat(r.joinDiscount||0)),0);
-            const tPt=members.reduce((s,r)=>s+(parseFloat(r.joinPoint||0)),0);
-            const tRemain=members.reduce((s,r)=>{
-                if(r.payment==='면제') return s;
-                return s + Math.max(0, (parseFloat(r.joinFee||0)) - window.computeJoinPaid(r));
-            },0);
-            const nbCnt=members.filter(r=>r.newborn==='뉴본').length,rbCnt=members.filter(r=>r.newborn==='리본').length;
+            // 회원 집계는 한 번의 순회로 끝낸다.
+            // (기존: joinFee/paid/discount/point/remain/뉴본/리본 각각 순회 = 7회 + computeJoinPaid 2회 중복 호출)
+            let tFee=0,tPaid=0,tDisc=0,tPt=0,tRemain=0,nbCnt=0,rbCnt=0;
+            members.forEach(r=>{
+                const fee=parseFloat(r.joinFee||0);
+                const paid=window.computeJoinPaid(r);
+                tFee+=fee; tPaid+=paid;
+                tDisc+=parseFloat(r.joinDiscount||0);
+                tPt+=parseFloat(r.joinPoint||0);
+                if(r.payment!=='면제') tRemain+=Math.max(0, fee-paid);
+                if(r.newborn==='뉴본') nbCnt++;
+                else if(r.newborn==='리본') rbCnt++;
+            });
             const tIntE=interiors.reduce((s,r)=>s+(parseFloat(r.intEstimate||0)),0),tExtE=interiors.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
             const tChamE=interiors.reduce((s,r)=>s+(parseFloat(r.chamEstimate||0)),0),tPcpkgE=interiors.reduce((s,r)=>s+(parseFloat(r.pcpkgEstimate||0)),0);
             const tIntM=interiors.reduce((s,r)=>s+cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0),0);
@@ -3655,10 +3680,11 @@
             const fmtM=m=>m.slice(2);
 
             const bCard=rows=>`<div class="space-y-2">${sM.map(m=>{const d=md[m];return`<div class="bg-slate-50 rounded-xl border overflow-hidden"><div class="bg-indigo-50 px-3 py-2 border-b"><span class="text-sm font-black text-indigo-700">${fmtM(m)}</span></div><div class="p-3 grid grid-cols-1 gap-y-1.5 text-xs divide-y divide-slate-100">${rows(d,m).map(([l,v,c])=>`<div class="flex justify-between items-center gap-2 pt-1.5 first:pt-0"><span class="text-slate-400 flex-shrink-0">${l}</span><span class="font-bold text-right ${c||''}">${v}</span></div>`).join('')}</div></div>`;}).join('')}</div>`;
-            const bTable=(hs,rows,totalsRow)=>{
+            const bTable=(hs,rows,totalsRow,stickyLast)=>{
                 const last=hs.length-1;
-                const sticky='sticky right-0 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]';
-                return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-xs border-collapse min-w-[520px]"><thead><tr class="bg-indigo-50 border-b text-[10px] text-slate-500 font-bold"><th class="p-2 text-left">월</th>${hs.map(([h,c],i)=>`<th class="p-2 text-center ${c} ${i===last?sticky+' bg-indigo-50':''}">${h}</th>`).join('')}</tr></thead><tbody class="divide-y">${sM.map(m=>{const d=md[m];return`<tr class="hover:bg-slate-50 group"><td class="p-2 font-bold">${fmtM(m)}</td>${rows(d,m).map(([v,c],i)=>`<td class="p-2 text-center font-bold ${c||''} ${i===last?sticky+' bg-white group-hover:bg-slate-50':''}">${v}</td>`).join('')}</tr>`;}).join('')}${totalsRow?`<tr class="bg-indigo-50 border-t-2 border-indigo-200 font-black"><td class="p-2 text-indigo-800">합계</td>${totalsRow.map(([v,c],i)=>`<td class="p-2 text-center ${c||''} ${i===last?sticky+' bg-indigo-50':''}">${v}</td>`).join('')}</tr>`:''}</tbody></table></div>`;
+                const sk=stickyLast?'sticky right-0 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]':'';
+                const at=i=>(stickyLast&&i===last)?sk:'';
+                return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-xs border-collapse min-w-[520px]"><thead><tr class="bg-indigo-50 border-b text-[10px] text-slate-500 font-bold"><th class="p-2 text-left">월</th>${hs.map(([h,c],i)=>`<th class="p-2 text-center ${c} ${at(i)} ${at(i)?'bg-indigo-50':''}">${h}</th>`).join('')}</tr></thead><tbody class="divide-y">${sM.map(m=>{const d=md[m];return`<tr class="hover:bg-slate-50 group"><td class="p-2 font-bold">${fmtM(m)}</td>${rows(d,m).map(([v,c],i)=>`<td class="p-2 text-center font-bold ${c||''} ${at(i)} ${at(i)?'bg-white group-hover:bg-slate-50':''}">${v}</td>`).join('')}</tr>`;}).join('')}${totalsRow?`<tr class="bg-indigo-50 border-t-2 border-indigo-200 font-black"><td class="p-2 text-indigo-800">합계</td>${totalsRow.map(([v,c],i)=>`<td class="p-2 text-center ${c||''} ${at(i)} ${at(i)?'bg-indigo-50':''}">${v}</td>`).join('')}</tr>`:''}</tbody></table></div>`;
             };
 
             const content=document.getElementById('dashboard-content');
@@ -3771,7 +3797,7 @@
                         [window.fmtAmt(sumNet),'text-blue-800'],
                     ];
                     return bTable([['가입비 실입금','text-emerald-600'],['미수금','text-amber-600'],['매출관리 마진','text-purple-600'],['포스 마진','text-sky-600'],['순마진','text-blue-700']],
-                    (d,m)=>cells(d), totalsRow);
+                    (d,m)=>cells(d), totalsRow, true);
                 })()}
                 <p class="text-[9px] text-slate-400 mt-1.5">※ 순마진 = 가입비 실입금 − 포인트 지급 + 매출관리 마진 + 포스 마진<br>※ 매출관리 마진은 견적 × 마진율 기준 예상치입니다. 시공·정산 완료 전 금액이 포함될 수 있습니다.</p></div>`:''}
             </div>`;
@@ -3791,7 +3817,13 @@
         window.getAnniversaryList = function(year, month){
             const mm = String(month).padStart(2,'0');
             const members = (window.memberList||[]).filter(r=>!r._deleted);
-            const admins  = (window.masterPharmacies||[]).filter(p=>!p._deleted);
+            // 개설행정은 memberId → 레코드 Map으로 미리 만들어 둔다.
+            // 회원마다 find()로 훑으면 회원수×개설행정수 만큼 비교가 일어나 데이터가 늘수록 급격히 느려진다.
+            const admMap = new Map();
+            (window.masterPharmacies||[]).forEach(p=>{
+                if(p._deleted || p.memberId==null) return;
+                admMap.set(String(p.memberId), p);
+            });
 
             const rows = [];
             members.forEach(r=>{
@@ -3809,7 +3841,7 @@
 
                 // 개설행정 상태 확인 — 기록이 없으면 통과(이미 오픈한 약국이므로)
                 // memberId는 등록 시기에 따라 문자열/숫자가 섞일 수 있어 String으로 통일 비교
-                const adm = admins.find(p => p.memberId!=null && String(p.memberId) === String(r.id));
+                const adm = admMap.get(String(r.id));
                 if(adm){
                     if(adm.setupStatus==='보류' || adm.setupStatus==='중단') return;
                     // 진행중(아직 완료 안 됨)이면 제외
@@ -4886,6 +4918,26 @@
             wrapped.__wrapped = true;
             window[fn] = wrapped;
         });
+
+        // ── 화면 회전 대응 ──
+        // 대시보드는 렌더 시점의 window.innerWidth로 카드뷰(<640) / 표뷰(≥640)를 결정한다.
+        // 세로에서 열어둔 채 가로로 돌리면(예: 393px → 852px) 그 판단이 그대로 굳어버려,
+        // 가로에서 카드가 늘어지거나 세로에서 표가 가로 스크롤되는 상태가 된다.
+        // 주의: 모바일 키보드가 올라와도 resize가 발생하므로(높이만 변함) 반드시 "가로폭 기준이
+        //       실제로 넘어갔을 때"만 다시 그린다. 아니면 입력할 때마다 화면이 새로 그려진다.
+        (function setupBreakpointRerender(){
+            const bp = () => window.innerWidth < 640;
+            let last = bp(), timer = null;
+            window.addEventListener('resize', () => {
+                const now = bp();
+                if (now === last) return;      // 폭 기준을 넘지 않았으면 무시(키보드 등)
+                last = now;
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    if (typeof window.refreshOpenDashboard === 'function') window.refreshOpenDashboard();
+                }, 150);
+            });
+        })();
 
         window.refreshOpenDashboard = function refreshOpenDashboard(){
             const modal = document.getElementById('admin-dashboard-modal');
