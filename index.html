@@ -1143,6 +1143,9 @@
                     <button onclick="showMemberDashboard()" class="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg border border-blue-200 whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-chart-bar mr-1"></i><span class="text-[9px] sm:text-xs">대시보드</span>
                     </button>
+                    <button onclick="showAnniversaryModal()" class="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold px-3 py-1.5 rounded-lg border border-amber-200 whitespace-nowrap flex-shrink-0">
+                        <i class="fa-solid fa-cake-candles mr-1"></i><span class="text-[9px] sm:text-xs">개국 기념일</span>
+                    </button>
                     <select id="member-filter-payment" onchange="changePage_reset('member');renderMembers()" class="text-xs border rounded-lg px-2 py-1.5 text-slate-600 flex-shrink-0">
                         <option value="">납입 전체</option>
                         <option value="대기">대기 (미납)</option>
@@ -3247,10 +3250,10 @@
             const list = (window.memberList || []).filter(r => !r._deleted);
             const archiveCount = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='archive').length;
             const trashCount   = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='trash').length;
-            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={},monthlyDiscount={},monthlyPoint={};
+            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={},monthlyDiscount={},monthlyPoint={},monthlyRemain={};
             const mAgeMap={}, mGenderMap={};
             let activeCount=0;
-            let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0;
+            let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0,totalRemain=0;
             const today = new Date().toISOString().split('T')[0];
             list.forEach(r => {
                 activeCount++;
@@ -3262,9 +3265,13 @@
                 payStatus[r.payment||'대기']=(payStatus[r.payment||'대기']||0)+1;
                 const fee=parseFloat(r.joinFee||0), paid=window.computeJoinPaid(r);
                 const discount=parseFloat(r.joinDiscount||0), point=parseFloat(r.joinPoint||0);
+                // 미수금: 실입금 계산식(가입금액-미수금)의 역산으로 구해 항상 정합성 유지.
+                // 면제 건은 미수금으로 잡지 않음.
+                const remain = (r.payment==='면제') ? 0 : Math.max(0, fee - paid);
                 totalFee+=fee; totalPaid+=paid;
                 totalDiscount+=discount;
                 totalPoint+=point;
+                totalRemain+=remain;
                 const m=(r.date||'').slice(0,7);
                 if(m){
                     monthlyMember[m]=(monthlyMember[m]||0)+1;
@@ -3272,6 +3279,7 @@
                     monthlyPaid[m]=(monthlyPaid[m]||0)+paid;
                     monthlyDiscount[m]=(monthlyDiscount[m]||0)+discount;
                     monthlyPoint[m]=(monthlyPoint[m]||0)+point;
+                    monthlyRemain[m]=(monthlyRemain[m]||0)+remain;
                 }
             });
             const sortedM=Object.keys(monthlyMember).sort().slice(-6);
@@ -3290,34 +3298,46 @@
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-center">
                     <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-slate-400 font-bold truncate">전체 가입금액</p><p class="text-xs sm:text-sm font-black text-slate-700 truncate">${window.fmtAmt(totalFee)}</p></div>
                     <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">실 입금액</p><p class="text-xs sm:text-sm font-black text-emerald-700 truncate">${window.fmtAmt(totalPaid)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-red-400 font-bold truncate">가맹비 할인</p><p class="text-xs sm:text-sm font-black text-red-500 truncate">${window.fmtAmt(totalDiscount)}</p></div>
-                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-xs sm:text-sm font-black text-purple-600 truncate">${window.fmtAmt(totalPoint)}</p></div>
+                    <div class="bg-white rounded-lg p-2 border border-amber-200 min-w-0"><p class="text-[9px] text-amber-600 font-bold truncate">미수금</p><p class="text-xs sm:text-sm font-black text-amber-600 truncate">${window.fmtAmt(totalRemain)}</p><p class="text-[8px] text-slate-400 truncate">${totalFee>0?Math.round(totalRemain/totalFee*100):0}% 미납</p></div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0"><p class="text-[9px] text-purple-500 font-bold truncate">포인트 지급</p><p class="text-xs sm:text-sm font-black text-purple-600 truncate">-${window.fmtAmt(totalPoint)}</p></div>
+                </div>
+                <div class="mt-2 bg-white rounded-lg p-2.5 border border-blue-200 flex items-center justify-between gap-2">
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-bold text-blue-700">실마진 <span class="text-slate-400 font-normal">(실입금 − 포인트)</span></p>
+                        <p class="text-[9px] text-slate-400">가맹비 할인 누적 ${window.fmtAmt(totalDiscount)} · 가입금액에 이미 반영</p>
+                    </div>
+                    <p class="text-sm sm:text-base font-black text-blue-700 flex-shrink-0">${window.fmtAmt(totalPaid-totalPoint)}</p>
                 </div>
             </div>
             <div class="mb-4">
                 <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-blue-500 mr-1"></i>월별 가입비 매출 (최근 6개월)</p>
-                <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[520px]">
+                <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[620px]">
                     <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
-                        <th class="p-2 text-left">월</th><th class="p-2 text-center">가입자</th><th class="p-2 text-right">총 가입금액</th><th class="p-2 text-right text-emerald-600">실 입금액</th><th class="p-2 text-right text-red-500">가맹비 할인</th><th class="p-2 text-right text-purple-600">포인트 지급</th>
+                        <th class="p-2 text-left">월</th><th class="p-2 text-center">가입자</th><th class="p-2 text-right">총 가입금액</th><th class="p-2 text-right text-emerald-600">실 입금액</th><th class="p-2 text-right text-amber-600">미수금</th><th class="p-2 text-right text-slate-400">가맹비 할인</th><th class="p-2 text-right text-purple-600">포인트 지급</th><th class="p-2 text-right text-blue-700">실마진</th>
                     </tr></thead>
                     <tbody class="divide-y">${sortedM.map(m=>`<tr class="hover:bg-slate-50">
                         <td class="p-2 font-bold">${m.slice(2)}</td>
                         <td class="p-2 text-center font-bold text-blue-600">${monthlyMember[m]||0}명</td>
                         <td class="p-2 text-right font-bold text-slate-700">${window.fmtAmt((monthlyFee[m]||0))}</td>
                         <td class="p-2 text-right font-bold text-emerald-600">${window.fmtAmt((monthlyPaid[m]||0))}</td>
-                        <td class="p-2 text-right font-bold text-red-500">${(monthlyDiscount[m]||0)>0?window.fmtAmt(monthlyDiscount[m]):'<span class="text-slate-300">-</span>'}</td>
-                        <td class="p-2 text-right font-bold text-purple-600">${(monthlyPoint[m]||0)>0?window.fmtAmt(monthlyPoint[m]):'<span class="text-slate-300">-</span>'}</td>
+                        <td class="p-2 text-right font-bold text-amber-600">${(monthlyRemain[m]||0)>0?window.fmtAmt(monthlyRemain[m]):'<span class="text-slate-300">-</span>'}</td>
+                        <td class="p-2 text-right font-bold text-slate-400">${(monthlyDiscount[m]||0)>0?window.fmtAmt(monthlyDiscount[m]):'<span class="text-slate-300">-</span>'}</td>
+                        <td class="p-2 text-right font-bold text-purple-600">${(monthlyPoint[m]||0)>0?'-'+window.fmtAmt(monthlyPoint[m]):'<span class="text-slate-300">-</span>'}</td>
+                        <td class="p-2 text-right font-black text-blue-700">${window.fmtAmt((monthlyPaid[m]||0)-(monthlyPoint[m]||0))}</td>
                     </tr>`).join('')}
                     <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
                         <td class="p-2 text-blue-800">합계</td>
                         <td class="p-2 text-center text-blue-700">${sortedM.reduce((s,m)=>s+(monthlyMember[m]||0),0)}명</td>
                         <td class="p-2 text-right text-slate-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyFee[m]||0),0))}</td>
                         <td class="p-2 text-right text-emerald-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPaid[m]||0),0))}</td>
-                        <td class="p-2 text-right text-red-700">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyDiscount[m]||0),0))}</td>
-                        <td class="p-2 text-right text-purple-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPoint[m]||0),0))}</td>
+                        <td class="p-2 text-right text-amber-700">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyRemain[m]||0),0))}</td>
+                        <td class="p-2 text-right text-slate-500">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyDiscount[m]||0),0))}</td>
+                        <td class="p-2 text-right text-purple-800">-${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPoint[m]||0),0))}</td>
+                        <td class="p-2 text-right text-blue-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPaid[m]||0)-(monthlyPoint[m]||0),0))}</td>
                     </tr>
                     </tbody>
                 </table></div>
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 가맹비 할인은 가입금액에 이미 반영된 금액입니다. 실마진에서 중복 차감하지 않습니다.</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
@@ -3504,6 +3524,10 @@
             const tPaid=members.reduce((s,r)=>s+window.computeJoinPaid(r),0);
             const tDisc=members.reduce((s,r)=>s+(parseFloat(r.joinDiscount||0)),0);
             const tPt=members.reduce((s,r)=>s+(parseFloat(r.joinPoint||0)),0);
+            const tRemain=members.reduce((s,r)=>{
+                if(r.payment==='면제') return s;
+                return s + Math.max(0, (parseFloat(r.joinFee||0)) - window.computeJoinPaid(r));
+            },0);
             const nbCnt=members.filter(r=>r.newborn==='뉴본').length,rbCnt=members.filter(r=>r.newborn==='리본').length;
             const tIntE=interiors.reduce((s,r)=>s+(parseFloat(r.intEstimate||0)),0),tExtE=interiors.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
             const tChamE=interiors.reduce((s,r)=>s+(parseFloat(r.chamEstimate||0)),0),tPcpkgE=interiors.reduce((s,r)=>s+(parseFloat(r.pcpkgEstimate||0)),0);
@@ -3546,9 +3570,9 @@
             }).length, m2a_d=members26.length;
             const pct=(n,d)=>d>0?Math.round(n/d*100):0;
 
-            const md={};const gc=m=>{if(!md[m])md[m]={c:0,j:0,nb:0,rb:0,f:0,p:0,iE:0,iM:0,iC:0,iT:0,pc:0,pf:0,ps:0};return md[m];};
+            const md={};const gc=m=>{if(!md[m])md[m]={c:0,j:0,nb:0,rb:0,f:0,p:0,rm:0,pt:0,iE:0,iM:0,iC:0,iT:0,pc:0,pf:0,ps:0};return md[m];};
             consults.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){gc(m).c++;if(r.status==='가입완료')gc(m).j++;}});
-            members.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){gc(m).nb+=(r.newborn==='뉴본'?1:0);gc(m).rb+=(r.newborn==='리본'?1:0);gc(m).f+=parseFloat(r.joinFee||0);gc(m).p+=window.computeJoinPaid(r);}});
+            members.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){const g=gc(m);g.nb+=(r.newborn==='뉴본'?1:0);g.rb+=(r.newborn==='리본'?1:0);const _f=parseFloat(r.joinFee||0),_p=window.computeJoinPaid(r);g.f+=_f;g.p+=_p;g.rm+=(r.payment==='면제'?0:Math.max(0,_f-_p));g.pt+=parseFloat(r.joinPoint||0);}});
             interiors.forEach(r=>{const m=(r.registerDate||r.completeDate||'').slice(0,7);if(m){gc(m).iT++;if(r.status==='완료')gc(m).iC++;gc(m).iE+=parseFloat(r.intEstimate||0)+parseFloat(r.extEstimate||0)+parseFloat(r.chamEstimate||0)+parseFloat(r.pcpkgEstimate||0);gc(m).iM+=cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0);}});
             const _posLedger = window.posMonthlyLedger || {};
             // 포스 "신규 가입자" 수는 정산원장(그 달 결제대상 계정 수)이 아니라
@@ -3634,9 +3658,10 @@
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">전체 가입금액</span><span class="font-bold text-right">${window.fmtAmt(tFee)}</span></div>
                     <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">실 입금액</span><span class="font-bold text-emerald-600 text-right">${window.fmtAmt(tPaid)}</span></div>
-                    <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">가맹비 할인</span><span class="font-bold text-red-500 text-right">-${window.fmtAmt(tDisc)}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">미수금</span><span class="font-bold text-amber-600 text-right">${window.fmtAmt(tRemain)}</span></div>
                     <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">포인트 지급</span><span class="font-bold text-purple-500 text-right">-${window.fmtAmt(tPt)}</span></div>
-                    <div class="col-span-1 sm:col-span-2 border-t border-blue-200 pt-1.5 flex justify-between gap-2 font-bold text-blue-700"><span>실 수익 (실입금 기준)</span><span class="text-right">${window.fmtAmt(tPaid)}</span></div>
+                    <div class="flex justify-between gap-2"><span class="text-slate-400 flex-shrink-0">가맹비 할인 <span class="text-[9px]">(누적·반영완료)</span></span><span class="font-bold text-slate-400 text-right">${window.fmtAmt(tDisc)}</span></div>
+                    <div class="col-span-1 sm:col-span-2 border-t border-blue-200 pt-1.5 flex justify-between gap-2 font-bold text-blue-700"><span>실마진 (실입금 − 포인트)</span><span class="text-right">${window.fmtAmt(tPaid-tPt)}</span></div>
                 </div></div>
                 <div class="bg-teal-50 rounded-xl p-3 border mb-3"><p class="text-xs font-bold text-teal-700 mb-2"><i class="fa-solid fa-paint-roller mr-1"></i>매출관리 수익 현황</p>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5 text-[11px] sm:text-xs">
@@ -3656,23 +3681,37 @@
                     <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">정산 후 마진</p><p class="text-xs sm:text-base font-black text-emerald-700 truncate">${window.fmtAmt(pM)}</p></div>
                 </div></div>
                 ${sM.length>0?`<div><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-indigo-500 mr-1"></i>월별 재무 현황</p>
-                ${isMob?bCard((d,m)=>[['가입비',d.f>0?window.fmtAmt(d.f):'-',''],['가입비 실입금',d.p>0?window.fmtAmt(d.p):'-','text-emerald-600'],['인익스테리어 매출',d.iE>0?window.fmtAmt(d.iE):'-',''],['인익스테리어 마진',d.iM>0?window.fmtAmt(d.iM):'-','text-purple-600'],['포스 매출',d.pf>0?d.pf+'만':'-','text-blue-600'],['포스 마진',d.pf>0?(d.pf-d.ps)+'만':'-','text-sky-600']]):
-                (()=>{
-                    const sumF=sM.reduce((s,m)=>s+(md[m].f||0),0), sumP=sM.reduce((s,m)=>s+(md[m].p||0),0);
-                    const sumIE=sM.reduce((s,m)=>s+(md[m].iE||0),0), sumIM=sM.reduce((s,m)=>s+(md[m].iM||0),0);
-                    const sumPf=sM.reduce((s,m)=>s+(md[m].pf||0),0), sumPs=sM.reduce((s,m)=>s+(md[m].ps||0),0);
-                    const totalsRow=[
-                        [sumF>0?window.fmtAmt(sumF):'-',''],
-                        [sumP>0?window.fmtAmt(sumP):'-','text-emerald-600'],
-                        [sumIE>0?window.fmtAmt(sumIE):'-',''],
-                        [sumIM>0?window.fmtAmt(sumIM):'-','text-purple-600'],
-                        [sumPf>0?window.fmtAmt(sumPf):'-','text-blue-600'],
-                        [sumPf>0?window.fmtAmt(sumPf-sumPs):'-','text-sky-600'],
+                ${(()=>{
+                    const net=d=>(d.p||0)-(d.pt||0)+(d.iM||0)+((d.pf||0)-(d.ps||0));
+                    const cells=d=>[
+                        [d.p>0?window.fmtAmt(d.p):'-','text-emerald-600'],
+                        [d.rm>0?window.fmtAmt(d.rm):'-','text-amber-600'],
+                        [d.iM>0?window.fmtAmt(d.iM):'-','text-purple-600'],
+                        [(d.pf-d.ps)>0?window.fmtAmt(d.pf-d.ps):'-','text-sky-600'],
+                        [window.fmtAmt(net(d)),'text-blue-700'],
                     ];
-                    return bTable([['가입비',''],['가입비 실입금','text-emerald-600'],['인익스테리어 매출',''],['인익스테리어 마진','text-purple-600'],['포스 매출','text-blue-600'],['포스 마진','text-sky-600']],
-                    (d,m)=>[[d.f>0?window.fmtAmt(d.f):'-',''],[d.p>0?window.fmtAmt(d.p):'-','text-emerald-600'],[d.iE>0?window.fmtAmt(d.iE):'-',''],[d.iM>0?window.fmtAmt(d.iM):'-','text-purple-600'],[d.pf>0?d.pf+'만':'-','text-blue-600'],[d.pf>0?(d.pf-d.ps)+'만':'-','text-sky-600']],
-                    totalsRow);
-                })()}</div>`:''}
+                    if(isMob){
+                        return bCard((d,m)=>[
+                            ['가입비 실입금',d.p>0?window.fmtAmt(d.p):'-','text-emerald-600'],
+                            ['미수금',d.rm>0?window.fmtAmt(d.rm):'-','text-amber-600'],
+                            ['매출관리 마진',d.iM>0?window.fmtAmt(d.iM):'-','text-purple-600'],
+                            ['포스 마진',(d.pf-d.ps)>0?window.fmtAmt(d.pf-d.ps):'-','text-sky-600'],
+                            ['순마진',window.fmtAmt(net(d)),'text-blue-700'],
+                        ]);
+                    }
+                    const sum=k=>sM.reduce((s,m)=>s+(md[m][k]||0),0);
+                    const sumNet=sM.reduce((s,m)=>s+net(md[m]),0);
+                    const totalsRow=[
+                        [sum('p')>0?window.fmtAmt(sum('p')):'-','text-emerald-600'],
+                        [sum('rm')>0?window.fmtAmt(sum('rm')):'-','text-amber-600'],
+                        [sum('iM')>0?window.fmtAmt(sum('iM')):'-','text-purple-600'],
+                        [(sum('pf')-sum('ps'))>0?window.fmtAmt(sum('pf')-sum('ps')):'-','text-sky-600'],
+                        [window.fmtAmt(sumNet),'text-blue-800'],
+                    ];
+                    return bTable([['가입비 실입금','text-emerald-600'],['미수금','text-amber-600'],['매출관리 마진','text-purple-600'],['포스 마진','text-sky-600'],['순마진','text-blue-700']],
+                    (d,m)=>cells(d), totalsRow);
+                })()}
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 순마진 = 가입비 실입금 − 포인트 지급 + 매출관리 마진 + 포스 마진<br>※ 매출관리 마진은 견적 × 마진율 기준 예상치입니다. 시공·정산 완료 전 금액이 포함될 수 있습니다.</p></div>`:''}
             </div>`;
 
             document.getElementById('admin-dashboard-modal').style.display='flex';
@@ -3680,6 +3719,129 @@
             window.lockBodyScroll();
             document.querySelector('#admin-dashboard-modal .modal-title-text').textContent='통합 대시보드';
         }
+
+        // ─────────────────────────────────────────────────────────────
+        // 개국 기념일 명단 (매월 진행 · 마케팅팀/유통팀 전달용)
+        //  · "그 달에 오픈한 약국"이 아니라 "과거 그 달에 오픈한 약국들의 기념일"
+        //    예) 2026년 7월 명단 = 2025-07, 2024-07, 2023-07 ... 에 오픈한 약국 전체
+        //  · 올해 오픈한 약국은 아직 첫 기념일이 안 왔으므로 제외됨 (내년부터 등장)
+        // ─────────────────────────────────────────────────────────────
+        window.getAnniversaryList = function(year, month){
+            const mm = String(month).padStart(2,'0');
+            const members = (window.memberList||[]).filter(r=>!r._deleted);
+            const admins  = (window.masterPharmacies||[]).filter(p=>!p._deleted);
+
+            const rows = [];
+            members.forEach(r=>{
+                const pharmacy = (r.pharmacy||'').trim();
+                const addr     = (r.address||'').trim();
+                const open     = (r.openDate||'').trim();
+                // 필수값 3종
+                if(!pharmacy || pharmacy==='약국명미정') return;
+                if(!addr) return;
+                if(!open || open.length < 7) return;
+                // 오픈월 일치 + 올해보다 이전에 오픈(=기념일이 최소 1회 도래)
+                const oy = parseInt(open.slice(0,4)), om = open.slice(5,7);
+                if(isNaN(oy) || om !== mm) return;
+                if(oy >= year) return;
+
+                // 개설행정 상태 확인 — 기록이 없으면 통과(이미 오픈한 약국이므로)
+                const adm = admins.find(p => p.memberId === r.id);
+                if(adm){
+                    if(adm.setupStatus==='보류' || adm.setupStatus==='중단') return;
+                    // 진행중(아직 완료 안 됨)이면 제외
+                    if(typeof isExpired==='function' && !isExpired(adm)) return;
+                }
+                rows.push({
+                    pharmacy,
+                    name: (r.name||'').trim(),
+                    openDate: open,
+                    years: year - oy,
+                });
+            });
+            rows.sort((a,b)=> b.years-a.years || a.pharmacy.localeCompare(b.pharmacy,'ko'));
+            return rows;
+        };
+
+        window.showAnniversaryModal = function(){
+            const now = new Date();
+            window._annivYear  = window._annivYear  || now.getFullYear();
+            window._annivMonth = window._annivMonth || (now.getMonth()+1);
+            renderAnniversary();
+            document.getElementById('admin-dashboard-modal').style.display='flex';
+            window.lockBodyScroll();
+            window.pushModalNav();
+            document.querySelector('#admin-dashboard-modal .modal-title-text').textContent='개국 기념일 명단';
+        };
+
+        window.changeAnniv = function(y, m){
+            window._annivYear = parseInt(y); window._annivMonth = parseInt(m);
+            renderAnniversary();
+        };
+
+        function renderAnniversary(){
+            const y = window._annivYear, m = window._annivMonth;
+            const rows = window.getAnniversaryList(y, m);
+            const thisYear = new Date().getFullYear();
+            const years = [];
+            for(let i=thisYear+1; i>=thisYear-2; i--) years.push(i);
+
+            // 연차별 그룹 요약
+            const byYears = {};
+            rows.forEach(r=>{ byYears[r.years]=(byYears[r.years]||0)+1; });
+            const yearKeys = Object.keys(byYears).map(Number).sort((a,b)=>a-b);
+
+            document.getElementById('dashboard-content').innerHTML = `
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+                <select id="anniv-year" onchange="changeAnniv(this.value, document.getElementById('anniv-month').value)" class="text-xs border rounded-lg px-2 py-1.5">
+                    ${years.map(v=>`<option value="${v}" ${v===y?'selected':''}>${v}년</option>`).join('')}
+                </select>
+                <select id="anniv-month" onchange="changeAnniv(document.getElementById('anniv-year').value, this.value)" class="text-xs border rounded-lg px-2 py-1.5">
+                    ${Array.from({length:12},(_,i)=>i+1).map(v=>`<option value="${v}" ${v===m?'selected':''}>${v}월</option>`).join('')}
+                </select>
+                <span class="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2.5 py-1.5 font-bold">${rows.length}곳</span>
+                <button onclick="downloadAnniversaryExcel()" class="ml-auto text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">
+                    <i class="fa-solid fa-file-excel mr-1"></i>엑셀 다운로드
+                </button>
+            </div>
+
+            ${yearKeys.length? `<div class="flex flex-wrap gap-1.5 mb-3">${yearKeys.map(k=>`<span class="text-[10px] bg-slate-100 text-slate-600 rounded-full px-2.5 py-1 font-bold">${k}주년 ${byYears[k]}곳</span>`).join('')}</div>`:''}
+
+            ${rows.length===0
+                ? `<div class="bg-slate-50 rounded-xl border p-8 text-center text-xs text-slate-400">
+                     ${y}년 ${m}월에 기념일을 맞는 약국이 없습니다.<br>
+                     <span class="text-[10px]">${y}년에 오픈한 약국은 내년부터 명단에 표시됩니다.</span>
+                   </div>`
+                : `<div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[420px]">
+                    <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
+                        <th class="p-2 text-left w-8">#</th><th class="p-2 text-left">약국명</th><th class="p-2 text-left w-24">약사명</th><th class="p-2 text-center w-20">연차</th>
+                    </tr></thead>
+                    <tbody class="divide-y">${rows.map((r,i)=>`<tr class="hover:bg-slate-50">
+                        <td class="p-2 text-slate-300">${i+1}</td>
+                        <td class="p-2 font-bold text-slate-700">${r.pharmacy}</td>
+                        <td class="p-2 text-slate-600">${r.name||'-'}</td>
+                        <td class="p-2 text-center"><span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 font-bold">${r.years}주년</span></td>
+                    </tr>`).join('')}</tbody>
+                </table></div>`}
+
+            <p class="text-[9px] text-slate-400 mt-2 leading-relaxed">
+                ※ 약국명·주소·오픈일이 모두 등록된 약국만 표시됩니다.<br>
+                ※ 개설행정 진행중·보류·중단, 아카이브·삭제보관함은 제외됩니다.<br>
+                ※ 개설행정 기록이 없어도 위 조건을 만족하면 포함됩니다.
+            </p>`;
+        }
+        window.renderAnniversary = renderAnniversary;
+
+        window.downloadAnniversaryExcel = function(){
+            const y = window._annivYear, m = window._annivMonth;
+            const rows = window.getAnniversaryList(y, m);
+            if(!rows.length){ alert('다운로드할 명단이 없습니다.'); return; }
+            window.downloadCSV(
+                `개국기념일_${y}년${String(m).padStart(2,'0')}월_${rows.length}곳.csv`,
+                ['No','약국명','약사명','연차'],
+                rows.map((r,i)=>[i+1, r.pharmacy, r.name, r.years+'주년'])
+            );
+        };
 
         // ── 전화번호 자동 포맷팅 ──
         function formatPhone(el) {
@@ -4650,7 +4812,8 @@
         // ─────────────────────────────────────────────────────────────
         window._openDashboardFn = null;
         ['showAdminDashboard','showConsultDashboard','showMemberDashboard',
-         'showInteriorDashboard','showIntegratedDashboard','showPosDashboard'].forEach(fn=>{
+         'showInteriorDashboard','showIntegratedDashboard','showPosDashboard',
+         'showAnniversaryModal'].forEach(fn=>{
             const orig = window[fn];
             if (typeof orig !== 'function' || orig.__wrapped) return;
             const wrapped = function(...args){
