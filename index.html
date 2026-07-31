@@ -2762,7 +2762,7 @@
         // ── [모바일 안정화 #3/#4] 안드로이드 뒤로가기 · iOS 스와이프 뒤로가기 대응 ──
         // 모달이 열려있을 때 하드웨어/소프트웨어 뒤로가기(둘 다 popstate 이벤트로 들어옴)를 누르면
         // 앱이 종료되거나 화면이 튕기지 않고, 열려있는 모달만 먼저 닫히도록 처리.
-        const MODAL_IDS_FOR_NAV = ['pos-modal','consult-modal','member-modal','interior-modal','register-modal','admin-dashboard-modal','cal-popup','archive-dialog'];
+        const MODAL_IDS_FOR_NAV = ['pos-modal','consult-modal','member-modal','interior-modal','register-modal','admin-dashboard-modal','cal-popup','archive-dialog','guide-preview-modal'];
         function getModalCloseFn(id) {
             switch(id) {
                 case 'pos-modal': return window.closePosModal;
@@ -2773,6 +2773,7 @@
                 case 'admin-dashboard-modal': return window.closeAdminDashboard;
                 case 'cal-popup': return window.closeCalPopup;
                 case 'archive-dialog': return window.archiveDialogCancel;
+                case 'guide-preview-modal': return window.closeGuidePreview;
                 default: return null;
             }
         }
@@ -3246,7 +3247,7 @@
             const list = (window.memberList || []).filter(r => !r._deleted);
             const archiveCount = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='archive').length;
             const trashCount   = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='trash').length;
-            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={};
+            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={},monthlyDiscount={},monthlyPoint={};
             const mAgeMap={}, mGenderMap={};
             let activeCount=0;
             let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0;
@@ -3260,14 +3261,17 @@
                 newborns[r.newborn||'미정']=(newborns[r.newborn||'미정']||0)+1;
                 payStatus[r.payment||'대기']=(payStatus[r.payment||'대기']||0)+1;
                 const fee=parseFloat(r.joinFee||0), paid=window.computeJoinPaid(r);
+                const discount=parseFloat(r.joinDiscount||0), point=parseFloat(r.joinPoint||0);
                 totalFee+=fee; totalPaid+=paid;
-                totalDiscount+=parseFloat(r.joinDiscount||0);
-                totalPoint+=parseFloat(r.joinPoint||0);
+                totalDiscount+=discount;
+                totalPoint+=point;
                 const m=(r.date||'').slice(0,7);
                 if(m){
                     monthlyMember[m]=(monthlyMember[m]||0)+1;
                     monthlyFee[m]=(monthlyFee[m]||0)+fee;
                     monthlyPaid[m]=(monthlyPaid[m]||0)+paid;
+                    monthlyDiscount[m]=(monthlyDiscount[m]||0)+discount;
+                    monthlyPoint[m]=(monthlyPoint[m]||0)+point;
                 }
             });
             const sortedM=Object.keys(monthlyMember).sort().slice(-6);
@@ -3292,21 +3296,25 @@
             </div>
             <div class="mb-4">
                 <p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-blue-500 mr-1"></i>월별 가입비 매출 (최근 6개월)</p>
-                <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[380px]">
+                <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[520px]">
                     <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
-                        <th class="p-2 text-left">월</th><th class="p-2 text-center">가입자</th><th class="p-2 text-right">총 가입금액</th><th class="p-2 text-right text-emerald-600">실 입금액</th>
+                        <th class="p-2 text-left">월</th><th class="p-2 text-center">가입자</th><th class="p-2 text-right">총 가입금액</th><th class="p-2 text-right text-emerald-600">실 입금액</th><th class="p-2 text-right text-red-500">가맹비 할인</th><th class="p-2 text-right text-purple-600">포인트 지급</th>
                     </tr></thead>
                     <tbody class="divide-y">${sortedM.map(m=>`<tr class="hover:bg-slate-50">
                         <td class="p-2 font-bold">${m.slice(2)}</td>
                         <td class="p-2 text-center font-bold text-blue-600">${monthlyMember[m]||0}명</td>
                         <td class="p-2 text-right font-bold text-slate-700">${window.fmtAmt((monthlyFee[m]||0))}</td>
                         <td class="p-2 text-right font-bold text-emerald-600">${window.fmtAmt((monthlyPaid[m]||0))}</td>
+                        <td class="p-2 text-right font-bold text-red-500">${(monthlyDiscount[m]||0)>0?window.fmtAmt(monthlyDiscount[m]):'<span class="text-slate-300">-</span>'}</td>
+                        <td class="p-2 text-right font-bold text-purple-600">${(monthlyPoint[m]||0)>0?window.fmtAmt(monthlyPoint[m]):'<span class="text-slate-300">-</span>'}</td>
                     </tr>`).join('')}
                     <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
                         <td class="p-2 text-blue-800">합계</td>
                         <td class="p-2 text-center text-blue-700">${sortedM.reduce((s,m)=>s+(monthlyMember[m]||0),0)}명</td>
                         <td class="p-2 text-right text-slate-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyFee[m]||0),0))}</td>
                         <td class="p-2 text-right text-emerald-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPaid[m]||0),0))}</td>
+                        <td class="p-2 text-right text-red-700">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyDiscount[m]||0),0))}</td>
+                        <td class="p-2 text-right text-purple-800">${window.fmtAmt(sortedM.reduce((s,m)=>s+(monthlyPoint[m]||0),0))}</td>
                     </tr>
                     </tbody>
                 </table></div>
@@ -7166,7 +7174,7 @@
             const next = pend.filter(x=>x.left>7).slice(0,2);
             const wait = pend.filter(x=>x.t.requested && !x.t.requestHandled);
 
-            let msg = `${p.pharmacist} 약사님, 안녕하세요!\n${p.name} 개설 진행 상황 안내드립니다.\n\n`;
+            let msg = `${(p.pharmacist||'').trim() ? p.pharmacist+' 약사님' : '약사님'}, 안녕하세요!\n${p.name} 개설 진행 상황 안내드립니다.\n\n`;
             if(hasOpen){
                 msg += dday > 0 ? `📅 오픈 예정일 ${fmt(open)} (D-${dday})\n`
                      : dday === 0 ? `📅 오늘이 개국일입니다! 🎉\n`
@@ -7201,13 +7209,56 @@
 
             try{
                 await navigator.clipboard.writeText(msg);
-                const t=document.createElement('div');
-                t.textContent='✅ 카톡 안내문이 복사되었습니다';
-                t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#003366;color:white;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:9999;box-shadow:0 4px 14px rgba(0,0,0,.25)';
-                document.body.appendChild(t); setTimeout(()=>t.remove(),2200);
-            }catch(e){
-                prompt('아래 내용을 복사해 사용하세요', msg);
-            }
+            }catch(e){ /* 클립보드 실패해도 미리보기에서 재복사 가능 */ }
+            window.showGuidePreview(msg);
+        };
+
+        // 카톡 안내문 미리보기 모달 — 복사 직후 내용을 바로 눈으로 확인 가능
+        window.showGuidePreview = function(msg){
+            const old = document.getElementById('guide-preview-modal');
+            if(old) old.remove();
+            const wrap = document.createElement('div');
+            wrap.id = 'guide-preview-modal';
+            wrap.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;';
+            wrap.innerHTML = `
+                <div style="background:#fff;border-radius:16px;max-width:420px;width:100%;padding:20px;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <p style="font-weight:800;font-size:13px;color:#003366;">✅ 카톡 안내문이 복사되었습니다</p>
+                        <button id="guide-preview-close" style="border:none;background:none;font-size:18px;color:#94a3b8;cursor:pointer;line-height:1;">✕</button>
+                    </div>
+                    <textarea id="guide-preview-text" readonly style="width:100%;height:240px;font-size:12px;line-height:1.5;border:1px solid #e2e8f0;border-radius:10px;padding:10px;resize:none;background:#f8fafc;"></textarea>
+                    <button id="guide-preview-recopy" style="margin-top:10px;width:100%;background:#003366;color:#fff;font-weight:700;padding:10px;border-radius:10px;border:none;font-size:13px;">다시 복사</button>
+                </div>`;
+            document.body.appendChild(wrap);
+            // ★ innerHTML 보간 금지: 약국명/메모에 <, & 등이 있으면 깨지므로 value로 주입
+            document.getElementById('guide-preview-text').value = msg;
+
+            document.getElementById('guide-preview-close').onclick = ()=>window.closeGuidePreview();
+            wrap.addEventListener('click', e=>{ if(e.target===wrap) window.closeGuidePreview(); });
+            document.getElementById('guide-preview-recopy').onclick = async ()=>{
+                const btn = document.getElementById('guide-preview-recopy');
+                const ta  = document.getElementById('guide-preview-text');
+                try{
+                    await navigator.clipboard.writeText(msg);
+                    btn.textContent='✅ 복사됨';
+                }catch(e){
+                    // 클립보드 차단 환경(구형 웹뷰 등) 대비 — 전체 선택해서 수동 복사 유도
+                    ta.removeAttribute('readonly'); ta.focus(); ta.select();
+                    ta.setAttribute('readonly','');
+                    btn.textContent='길게 눌러 복사해주세요';
+                }
+                setTimeout(()=>{ const b=document.getElementById('guide-preview-recopy'); if(b) b.textContent='다시 복사'; }, 1800);
+            };
+
+            window.lockBodyScroll();
+            window.pushModalNav();
+        };
+
+        window.closeGuidePreview = function(){
+            const el = document.getElementById('guide-preview-modal');
+            if(el) el.remove();
+            window.unlockBodyScroll();
+            window.popModalNav();
         };
 
         // ── 캘린더 클릭 → 타임라인 스크롤 이동 ──
