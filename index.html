@@ -86,12 +86,14 @@
         window._resolvedPharmacyId = null;
 
         // UUID → pharmacyId 변환
+        // [보안] 숫자 ID 폴백 제거 (2026-08-03)
+        // 기존: ?id=1, ?id=2 처럼 숫자만 넣으면 UUID 링크 없이도 임의 약국 페이지 접근 가능했음.
+        // 이제 chamyaksa/links에 등록된 UUID로만 접근 가능. 매칭 실패 시 '유효하지 않은 링크' 처리.
         async function resolveLink(uuid) {
             try {
                 const snap = await getDoc(doc(db,'chamyaksa','links'));
                 if(snap.exists()){const v=snap.data()[uuid];if(v)return parseInt(v);}
-                const n=parseInt(uuid); if(!isNaN(n))return n;
-            } catch(e){const n=parseInt(uuid);if(!isNaN(n))return n;}
+            } catch(e){ console.error('링크 조회 오류', e); }
             return null;
         }
 
@@ -133,6 +135,24 @@
         }
 
         // ── 데이터 리스너 시작 ──
+        // ── [보안] 약사 페이지 데이터 스코핑 (2026-08-03) ──
+        // 약사 공유 페이지는 master/timeline 문서를 통째로 내려받는 구조라
+        // 브라우저 콘솔에서 window.masterPharmacies 만 쳐도 전체 약국 정보가 보였음.
+        // 메모리에 올릴 때 본인 약국 1건만 남겨 노출 범위를 축소한다.
+        // (근본 해결은 master/timeline의 서브컬렉션 분리 — 개발자 협의 항목)
+        function scopeMasterForShared(list){
+            const pid = window._resolvedPharmacyId;
+            if(!pid) return list;                       // 관리자 화면은 전체 유지
+            return (list||[]).filter(x=>String(x.id)===String(pid));
+        }
+        function scopeTimelineForShared(map){
+            const pid = window._resolvedPharmacyId;
+            if(!pid) return map;                        // 관리자 화면은 전체 유지
+            const out={};
+            Object.keys(map||{}).forEach(k=>{ if(String(k)===String(pid)) out[k]=map[k]; });
+            return out;
+        }
+
         function startListeners(){
             let inited=false;
             function callInit(){
@@ -147,7 +167,7 @@
             }
             // master 데이터
             onSnapshot(doc(db,'chamyaksa','master'),snap=>{
-                if(snap.exists()&&snap.data().list) window.masterPharmacies=snap.data().list;
+                if(snap.exists()&&snap.data().list) window.masterPharmacies=scopeMasterForShared(snap.data().list);
                 window._fbReady=true;
                 callInit();
                 if(inited&&typeof window.refresh==='function'){
@@ -167,7 +187,7 @@
                         const numKey=parseInt(k);
                         p[isNaN(numKey)?k:numKey]=snap.data().map[k];
                     });
-                    window.timelineMap=p;
+                    window.timelineMap=scopeTimelineForShared(p);
                     const a=document.activeElement;
                     const isTyping=a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA');
                     if(!isTyping){
@@ -195,6 +215,10 @@
             });
             // 저장 함수
             window.saveToFirebase=async function(){
+                // [안전장치] 약사 페이지는 본인 약국 1건만 메모리에 들고 있으므로
+                // 여기서 저장이 실행되면 master 문서 전체가 1건으로 덮어써질 수 있다.
+                // Firestore 규칙(write: auth 필요)이 1차 방어이지만 클라이언트에서도 차단한다.
+                if(window._resolvedPharmacyId){ return; }
                 try{
                     window._timelineSaving = true;
                     await setDoc(doc(db,'chamyaksa','master'),{list:window.masterPharmacies});
@@ -6686,6 +6710,9 @@
 
         // ── 전체 약국 타임라인 자동 동기화 ──
         function autoSyncAllTimelines() {
+            // 약사 페이지(공유 링크)에서는 실행하지 않음.
+            // 본인 약국 1건만 메모리에 있고 쓰기 권한도 없어 무의미한 저장 시도만 발생함.
+            if(window._resolvedPharmacyId) return;
             const pharmacies = window.masterPharmacies || [];
             if(!pharmacies.length) return;
             let changed = false;
