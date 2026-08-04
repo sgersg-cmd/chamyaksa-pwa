@@ -343,7 +343,7 @@
                 // 관리자 로그인 완료
                 window._currentUser=user;
                 document.getElementById('login-screen')?.remove();
-                document.title = '참메이트 통합관리 시스템 v13.7';
+                document.title = '참메이트 통합관리 시스템 v13.8';
                 hideSplash();
                 const uel=document.getElementById('admin-user-email');
                 if(uel)uel.textContent=user.email;
@@ -795,7 +795,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v13.7</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v13.8</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -975,7 +975,7 @@
                                 <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">계약일</label><input type="date" id="edit-input-contract-date" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
                                 <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">오픈일(예정일)</label><input type="date" id="edit-input-open-date" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
                             </div>
-                            <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">인테리어 업체/담당</label><input type="text" id="edit-input-interior" placeholder="업체명 / 담당자" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"></div>
+                            <div><label class="block text-slate-400 font-bold mb-1 uppercase text-[9px]">인테리어 업체/담당</label><input type="text" id="edit-input-interior" placeholder="업체명 / 담당자" class="w-full bg-slate-50 border rounded p-2 focus:outline-blue-500"><div id="edit-interior-hint" class="hidden mt-1 text-[10px] leading-relaxed"></div></div>
                             <label class="flex items-start gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer">
                                 <input type="checkbox" id="edit-input-card-used" class="w-4 h-4 mt-0.5 rounded border-slate-300 text-blue-600 flex-shrink-0">
                                 <span class="text-[11px] text-blue-800 font-bold leading-snug">명함 혜택 이미 사용한 약사 <span class="block text-[10px] text-blue-500 font-normal">체크 시 명함 신청란이 참스토어 재구매 안내로 전환됩니다.<br>(체크 후 <b>가맹점 정보 업데이트</b>를 눌러주세요!)</span></span>
@@ -1826,6 +1826,21 @@
                     처리하기
                 </button>
             </div>
+        </div>
+    </div>
+
+    <!-- ── 보기 전용 모달 (읽기 전용) ── -->
+    <div id="view-modal" class="fixed inset-0 z-50 bg-black/60 p-4 backdrop-blur-sm" style="display:none; align-items:center; justify-content:center;" onclick="if(event.target===this)closeViewModal()">
+        <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl max-h-[90vh] flex flex-col modal-slide">
+            <div class="flex justify-between items-start gap-3 p-5 pb-3 border-b">
+                <div class="min-w-0">
+                    <h3 id="view-modal-title" class="text-base font-bold text-slate-900 truncate"></h3>
+                    <p id="view-modal-sub" class="text-[11px] text-slate-400 mt-0.5 truncate"></p>
+                </div>
+                <button onclick="closeViewModal()" class="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none flex-shrink-0">✕</button>
+            </div>
+            <div id="view-modal-body" class="p-5 pt-4 overflow-y-auto flex-1 space-y-4"></div>
+            <div id="view-modal-footer" class="p-4 border-t bg-slate-50 rounded-b-2xl flex gap-2 justify-end"></div>
         </div>
     </div>
 
@@ -2820,9 +2835,10 @@
         // ── [모바일 안정화 #3/#4] 안드로이드 뒤로가기 · iOS 스와이프 뒤로가기 대응 ──
         // 모달이 열려있을 때 하드웨어/소프트웨어 뒤로가기(둘 다 popstate 이벤트로 들어옴)를 누르면
         // 앱이 종료되거나 화면이 튕기지 않고, 열려있는 모달만 먼저 닫히도록 처리.
-        const MODAL_IDS_FOR_NAV = ['pos-modal','consult-modal','member-modal','interior-modal','register-modal','admin-dashboard-modal','cal-popup','archive-dialog','guide-preview-modal'];
+        const MODAL_IDS_FOR_NAV = ['view-modal','pos-modal','consult-modal','member-modal','interior-modal','register-modal','admin-dashboard-modal','cal-popup','archive-dialog','guide-preview-modal'];
         function getModalCloseFn(id) {
             switch(id) {
+                case 'view-modal': return window.closeViewModal;
                 case 'pos-modal': return window.closePosModal;
                 case 'consult-modal': return window.closeConsultModal;
                 case 'member-modal': return window.closeMemberModal;
@@ -4437,7 +4453,7 @@
                 const tbody = document.getElementById(tbodyId); if(!tbody) return;
                 tbody.innerHTML = paged.length === 0
                     ? `<tr><td colspan="11" class="text-center py-6 text-slate-400 text-sm">데이터가 없습니다</td></tr>`
-                    : paged.map(r => { const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr class="${r._deleted?'opacity-50 bg-red-50/30':'hover:bg-blue-50/30'}">
+                    : paged.map(r => { const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr data-view-type="pos" data-view-id="${r.id}" class="cursor-pointer ${r._deleted?'opacity-50 bg-red-50/30':'hover:bg-blue-50/30'}">
                         <td class="p-3 text-center whitespace-nowrap">${bulkRowCheckboxHtml(uiKey, r.id)}</td>
                         <td data-label="가입일(설치일)" class="p-3 text-[11px] whitespace-nowrap">${r.date||'-'}</td>
                         <td data-label="약사명" class="p-3 font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
@@ -4451,7 +4467,7 @@
                         <td data-label="관리" class="p-3 text-center whitespace-nowrap sticky right-0 ${rowBg} shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                             ${r._deleted
                                 ? `<button onclick="restorePos('${r.id}')" class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-2 py-1 hover:bg-emerald-50 font-bold mr-1">↩ 복구</button><button onclick="permanentDeletePos('${r.id}')" class="text-[10px] border border-red-400 text-red-600 rounded px-2 py-1 hover:bg-red-50 font-bold">완전삭제</button>`
-                                : `<button onclick="editPos('${r.id}')" class="text-[10px] border border-slate-300 text-slate-600 rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button><button onclick="deletePos('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
+                                : window.viewBtn('pos', r.id) + `<button onclick="event.stopPropagation();editPos('${r.id}')" class="text-[10px] border border-slate-300 text-slate-600 rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button><button onclick="event.stopPropagation();deletePos('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
                             }
                         </td>
                     </tr>`;}).join('');
@@ -5096,7 +5112,7 @@
             if (!tbody) return;
             tbody.innerHTML = paged.length===0
                 ? `<tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">${window._showDeletedConsults ? '삭제된 항목이 없습니다' : '등록된 상담 내역이 없습니다'}</td></tr>`
-                : paged.map(r=>{ const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr class="${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
+                : paged.map(r=>{ const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr data-view-type="consult" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
                 <td class="p-3 text-center whitespace-nowrap">${bulkRowCheckboxHtml('consult', r.id)}</td>
                 <td data-label="상담일" class="p-3 text-[11px] whitespace-nowrap">${r.date||'-'}</td>
                 <td data-label="이름" class="p-3 font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
@@ -5111,7 +5127,7 @@
                 <td data-label="관리" class="p-3 text-center whitespace-nowrap sticky right-0 ${rowBg} shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.06)]">
                     ${r._deleted
                         ? `<button onclick="restoreConsult('${r.id}')" class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-2 py-1 hover:bg-emerald-50 font-bold mr-1">↩ 복구</button><button onclick="permanentDeleteConsult('${r.id}')" class="text-[10px] border border-red-400 text-red-600 rounded px-2 py-1 hover:bg-red-50 font-bold">완전삭제</button>`
-                        : `<button onclick="editConsult('${r.id}')" class="text-[10px] border border-slate-300 text-slate-600 rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button>
+                        : window.viewBtn('consult', r.id) + `<button onclick="event.stopPropagation();editConsult('${r.id}')" class="text-[10px] border border-slate-300 text-slate-600 rounded px-2 py-1 hover:bg-slate-50 mr-1">수정</button>
                     <button onclick="deleteConsult('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50 mr-1">삭제</button>
                     ${r.status==='가입완료'?`<span class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-2 py-1 bg-emerald-50 font-bold">가입자</span>`:''}`
                     }
@@ -5296,7 +5312,7 @@
             tbody.innerHTML=paged.length===0?`<tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">등록된 가입자가 없습니다</td></tr>`:
             paged.map(r=>{ const rowBg = r._deleted ? 'bg-red-50' : 'bg-white';
                 const branch = window.parseBranchFromAddress ? (window.parseBranchFromAddress(r.address||'') || '-') : '-';
-                return `<tr class="${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
+                return `<tr data-view-type="member" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
                 <td class="px-2 py-2 text-center">${bulkRowCheckboxHtml('member', r.id)}</td>
                 <td data-label="가입일" class="px-2 py-2 text-[10px] whitespace-nowrap">${r.date||'-'}</td>
                 <td data-label="약사명" class="px-2 py-2 text-[12px] font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
@@ -5316,9 +5332,9 @@
                             const reasonBadge = r._archiveReason ? `<span class="text-[9px] bg-blue-50 text-blue-500 border border-blue-200 rounded px-1.5 py-0.5 mr-1">${r._archiveReason}</span>` : '';
                             const restoreBtn = `<button onclick="restoreMember('${r.id}')" class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-2 py-1 hover:bg-emerald-50 font-bold">↩ 복구</button>`;
                             const deleteBtn  = isArchiveTab ? '' : `<button onclick="permanentDeleteMember('${r.id}')" class="text-[10px] border border-red-400 text-red-600 rounded px-2 py-1 hover:bg-red-50 font-bold">완전삭제</button>`;
-                            return reasonBadge + restoreBtn + deleteBtn;
+                            return window.viewBtn('member', r.id) + reasonBadge + restoreBtn + deleteBtn;
                           })()
-                        : `<button onclick="editMember('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50">수정</button><button onclick="deleteMember('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
+                        : window.viewBtn('member', r.id) + `<button onclick="event.stopPropagation();editMember('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50">수정</button><button onclick="event.stopPropagation();deleteMember('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
                     }
                     </div>
                 </td>
@@ -5364,7 +5380,7 @@
                                 <span class="text-sm font-bold truncate">${r.name}</span>
                                 <span class="text-[10px] text-slate-400 truncate">${r.pharmacy||''}</span>
                             </div>
-                            <button onclick="editMember('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-blue-600 border-blue-200 flex-shrink-0">수정</button>
+                            ${window.viewBtn('member', r.id, 'sm')}<button onclick="event.stopPropagation();editMember('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-blue-600 border-blue-200 flex-shrink-0">수정</button>
                         </div>
                         <div class="bg-slate-50 rounded-lg px-2 pt-1 pb-0.5">${rows}</div>
                         ${r.paymentMemo?`<p class="text-[10px] text-slate-400 mt-1.5 truncate"><i class="fa-solid fa-note-sticky mr-1"></i>${r.paymentMemo}</p>`:''}
@@ -5537,6 +5553,279 @@
             document.getElementById('member-modal').style.display='none'; window.unlockBodyScroll();
             window.popModalNav();
         }
+        // ══════════════════════════════════════════════════════════
+        //  보기 전용 모달 (읽기 전용)  — 2026-08-03 추가
+        //  수정 모달로 조회하던 방식을 대체. 오조작 방지 + 조회 속도 개선.
+        //  아카이브 회원도 조회 가능 (수정은 복구 후에만).
+        // ══════════════════════════════════════════════════════════
+        (function(){
+            const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+            // 값이 실제로 있는지 (빈문자/undefined/null 제외. 0은 금액에서만 별도 처리)
+            const has = v => v!==undefined && v!==null && String(v).trim()!=='';
+            // 금액(만원 단위 입력) 표시
+            const won = v => {
+                const n = parseFloat(String(v==null?'':v).replace(/,/g,''));
+                if(isNaN(n) || n===0) return '';
+                return n.toLocaleString() + '만원';
+            };
+            const plain = v => has(v) ? esc(v) : '';
+
+            // 한 줄 렌더 (값 없으면 렌더 안 함)
+            function row(label, value, opt){
+                opt = opt || {};
+                let v = opt.money ? won(value) : plain(value);
+                if(!v) return '';
+                if(opt.tel){
+                    const digits = String(value).replace(/[^0-9]/g,'');
+                    if(digits) v = `<a href="tel:${digits}" class="text-blue-600 hover:underline">${v}</a>`;
+                }
+                if(opt.map){
+                    // 네이버 지도 연동 (모바일에서는 네이버지도 앱으로 전환됨)
+                    const url = 'https://map.naver.com/p/search/' + encodeURIComponent(String(value));
+                    v += ` <a href="${url}" target="_blank" rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 ml-1 align-middle text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 hover:bg-emerald-100"
+                        title="네이버 지도에서 보기"><i class="fa-solid fa-location-dot"></i>지도</a>`;
+                }
+                if(opt.badge) v = `<span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded border ${opt.badge}">${v}</span>`;
+                const wide = opt.wide ? ' col-span-2' : '';
+                const pre  = opt.pre ? ' whitespace-pre-wrap leading-relaxed' : '';
+                return `<div class="${wide}">
+                    <p class="text-[9px] text-slate-400 font-bold uppercase mb-0.5">${esc(label)}</p>
+                    <p class="text-xs text-slate-800 font-semibold break-words${pre}">${v}</p>
+                </div>`;
+            }
+
+            // 섹션 렌더 (내용 없으면 섹션 자체를 숨김)
+            function section(title, rowsHtml){
+                if(!rowsHtml.trim()) return '';
+                return `<div>
+                    <p class="text-[10px] font-black text-slate-500 mb-2 pb-1 border-b border-slate-200">${esc(title)}</p>
+                    <div class="grid grid-cols-2 gap-x-3 gap-y-2.5">${rowsHtml}</div>
+                </div>`;
+            }
+
+            const B = {
+                ok:   'bg-emerald-50 text-emerald-700 border-emerald-200',
+                warn: 'bg-amber-50 text-amber-700 border-amber-200',
+                off:  'bg-slate-100 text-slate-500 border-slate-200',
+                info: 'bg-blue-50 text-blue-700 border-blue-200',
+            };
+            const ynBadge = v => (v==='완료'||v==='진행') ? B.ok : (v==='진행중'?B.warn:B.off);
+
+            // ── 탭별 정의 ──
+            const SPECS = {
+                member: {
+                    icon: 'fa-solid fa-user', color: 'text-blue-600',
+                    list: () => window.memberList || [],
+                    title: r => (r.name||'-') + (r.pharmacy ? ` · ${r.pharmacy}` : ''),
+                    sub:   r => ['가입일 '+(r.date||'-'), r.manager?('담당 '+r.manager):''].filter(Boolean).join(' · '),
+                    body: r => [
+                        section('기본 정보',
+                            row('약사명', r.name) + row('약국명', r.pharmacy) +
+                            row('연락처', r.phone, {tel:true}) + row('생년월일', r.birth) +
+                            row('성별', r.gender) + row('연령', r.ageLabel) +
+                            row('주소', r.address, {map:true, wide:true}) +
+                            row('담당 SV', r.manager) + row('회원등급', r.grade)
+                        ) +
+                        section('가입 / 약국 정보',
+                            row('가입일자', r.date) + row('오픈일(예정)', r.openDate) +
+                            row('신규/기존', r.newborn) + row('약국 평수', r.size) +
+                            row('처방과목', r.prescription, {wide:true})
+                        ) +
+                        section('계약 / 입금',
+                            row('계약서', r.contract, {badge: r.contract==='완료'?B.ok:B.warn}) +
+                            row('입금상태', r.payment, {badge: r.payment==='완납'?B.ok:B.warn}) +
+                            row('입금일', r.paymentDate) + row('면제사유', r.exemptReason) +
+                            row('전체 가입금액', r.joinFee, {money:true}) +
+                            row('실 입금액', r.joinPaid, {money:true}) +
+                            row('계약금', r.depositPaid, {money:true}) +
+                            row('잔금', r.paymentRemain, {money:true}) +
+                            row('잔금 예정일', r.paymentDue) +
+                            row('가맹비 할인', r.joinDiscount, {money:true}) +
+                            row('할인 사유', r.joinDiscountMemo, {wide:true}) +
+                            row('포인트', r.joinPoint, {money:true}) +
+                            row('포인트 사유', r.joinPointMemo, {wide:true}) +
+                            row('입금 메모', r.paymentMemo, {wide:true, pre:true})
+                        ) +
+                        section('진행 현황',
+                            row('개설행정', r.adminYn, {badge: ynBadge(r.adminYn)}) +
+                            row('인테리어', r.interiorYn, {badge: ynBadge(r.interiorYn)}) +
+                            row('익스테리어', r.exteriorYn, {badge: ynBadge(r.exteriorYn)}) +
+                            row('PC패키지', r.pcpkgYn, {badge: ynBadge(r.pcpkgYn)})
+                        ) +
+                        section('메모', row('메모', r.memo, {wide:true, pre:true}))
+                    ].join(''),
+                    editFn: 'editMember',
+                },
+                consult: {
+                    icon: 'fa-solid fa-comments', color: 'text-indigo-600',
+                    list: () => window.consultList || [],
+                    title: r => (r.name||'-'),
+                    sub:   r => ['상담일 '+(r.date||'-'), r.manager?('담당 '+r.manager):''].filter(Boolean).join(' · '),
+                    body: r => [
+                        section('상담 기본',
+                            row('성명', r.name) + row('연락처', r.phone, {tel:true}) +
+                            row('상담일자', r.date) + row('담당자', r.manager) +
+                            row('지역', r.region) + row('유입경로', r.channel) +
+                            row('성별', r.gender) + row('연령대', r.ageGroup)
+                        ) +
+                        section('약국 정보',
+                            row('약국 유형', r.pharmacyType) + row('평수', r.size) +
+                            row('경쟁사', r.competitor, {wide:true})
+                        ) +
+                        section('진행 상태',
+                            row('상태', r.status, {badge: r.status==='가입완료'?B.ok:B.info}) +
+                            row('리마인드', r.remindDate) +
+                            row('가입사유', (r.joinReasons||[]).join(', '), {wide:true}) +
+                            row('미가입 사유', r.cancelReason) +
+                            row('상세 사유', r.cancelDetail, {wide:true, pre:true})
+                        ) +
+                        section('메모', row('메모', r.memo, {wide:true, pre:true}))
+                    ].join(''),
+                    editFn: 'editConsult',
+                },
+                interior: {
+                    icon: 'fa-solid fa-paint-roller', color: 'text-sky-600',
+                    list: () => window.interiorList || [],
+                    title: r => (r.pharmacy || r.name || '-'),
+                    sub:   r => [r.type||'', r.status||''].filter(Boolean).join(' · '),
+                    body: r => {
+                        // 견적/정산: 마진율(%)로 저장되어 있으므로 정산금액으로 역산해 표시
+                        const settle = (est, rate) => {
+                            const e = parseFloat(est)||0, p = parseFloat(rate);
+                            if(!(e>0) || isNaN(p)) return '';
+                            return String(Math.round(e - (e*p/100)));
+                        };
+                        const margin = (est, rate) => {
+                            const e = parseFloat(est)||0, p = parseFloat(rate);
+                            if(!(e>0) || isNaN(p)) return '';
+                            return String(Math.round(e*p/100));
+                        };
+                        const money3 = (label, est, rate) =>
+                            row(label+' 견적', est, {money:true}) +
+                            row(label+' 정산', settle(est,rate), {money:true}) +
+                            row(label+' 마진', margin(est,rate), {money:true});
+                        return [
+                            section('기본 정보',
+                                row('약사명', r.name) + row('약국명', r.pharmacy) +
+                                row('유형', r.type, {badge:B.info}) +
+                                row('상태', r.status, {badge: (r.status==='완료')?B.ok:(r.status==='미진행'||r.status==='장기보류')?B.off:B.warn}) +
+                                row('업체', r.partner) + row('업체 담당자', r.partnerManager || r.manager)
+                            ) +
+                            section('일정',
+                                row('등록일', r.registerDate) + row('예정일', r.expectedDate) +
+                                row('리마인드', r.remindDate) + row('완료일', r.completeDate)
+                            ) +
+                            section('금액',
+                                money3('인테리어', r.intEstimate || r.estimate, r.intMarginRate || r.marginRate) +
+                                money3('익스테리어', r.extEstimate, r.extMarginRate) +
+                                money3('참매대', r.chamEstimate, r.chamMarginRate) +
+                                money3('PC패키지', r.pcpkgEstimate, r.pcpkgMarginRate)
+                            ) +
+                            section('보류 / 미진행 사유',
+                                row('장기보류 사유', r.longtermReason, {wide:true, pre:true}) +
+                                row('미진행 사유', r.dropReason) +
+                                row('상세', r.dropDetail, {wide:true, pre:true})
+                            ) +
+                            section('메모', row('메모', r.memo, {wide:true, pre:true}))
+                        ].join('');
+                    },
+                    editFn: 'editInterior',
+                },
+                pos: {
+                    icon: 'fa-solid fa-cash-register', color: 'text-violet-600',
+                    list: () => window.posList || [],
+                    title: r => (r.pharmacy || r.name || '-'),
+                    sub:   r => [r.version||'', r.installation||''].filter(Boolean).join(' · '),
+                    body: r => [
+                        section('기본 정보',
+                            row('약사명', r.name) + row('약국명', r.pharmacy) +
+                            row('연락처', r.phone, {tel:true}) + row('버전', r.version, {badge:B.info}) +
+                            row('등록일', r.date) + row('프로그램', r.program)
+                        ) +
+                        section('계약 / 설치',
+                            row('계약서', r.contract, {badge: r.contract==='완료'?B.ok:B.warn}) +
+                            row('CMS', r.cms, {badge: r.cms==='연동'?B.ok:B.off}) +
+                            row('설치', r.installation, {badge: r.installation==='완료'?B.ok:B.warn}) +
+                            row('설치일', r.installDate) +
+                            row('CMS 확인일', r.cmsConfirmDate) + row('혜택 종료일', r.benefitEnd)
+                        ) +
+                        section('정산',
+                            row('월 이용료', r.monthlyFee, {money:true}) +
+                            row('정산', r.settlement, {money:true})
+                        ) +
+                        section('메모', row('메모', r.memo, {wide:true, pre:true}))
+                    ].join(''),
+                    editFn: 'editPos',
+                },
+            };
+
+            window.openViewModal = function(type, id){
+                const spec = SPECS[type];
+                if(!spec) return;
+                const r = spec.list().find(x => String(x.id) === String(id));
+                if(!r){ alert('데이터를 찾을 수 없습니다.'); return; }
+
+                const isArchived = !!r._deleted;
+                const archiveBadge = isArchived
+                    ? `<span class="ml-2 align-middle text-[9px] font-bold px-1.5 py-0.5 rounded border bg-blue-50 text-blue-600 border-blue-200">아카이브${r._archiveReason?' · '+esc(r._archiveReason):''}</span>`
+                    : '';
+
+                document.getElementById('view-modal-title').innerHTML =
+                    `<i class="${spec.icon} ${spec.color} mr-2"></i>${esc(spec.title(r))}${archiveBadge}`;
+                document.getElementById('view-modal-sub').textContent = spec.sub(r) || '';
+
+                let html = spec.body(r);
+                if(!html.trim()) html = '<p class="text-xs text-slate-400 text-center py-6">등록된 정보가 없습니다.</p>';
+                if(isArchived){
+                    html = `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-[11px] text-blue-700 leading-relaxed">
+                        <b>아카이브 회원입니다.</b><br>지점은 종료되었으나 회원 자격은 유지됩니다.
+                        재개설 시 <b>복구</b>하면 가입자 목록으로 돌아옵니다. 정보 수정은 복구 후 가능합니다.
+                    </div>` + html;
+                }
+                document.getElementById('view-modal-body').innerHTML = html;
+
+                // 하단 버튼
+                let footer = `<button onclick="closeViewModal()" class="text-xs px-4 py-2 rounded-lg border bg-white hover:bg-slate-100 font-bold text-slate-600">닫기</button>`;
+                if(isArchived){
+                    footer += `<button onclick="closeViewModal();restoreMember('${esc(r.id)}')" class="text-xs px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold">↩ 복구</button>`;
+                } else if(spec.editFn && typeof window[spec.editFn] === 'function'){
+                    footer += `<button onclick="closeViewModal();window.${spec.editFn}('${esc(r.id)}')" class="text-xs px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold"><i class="fa-solid fa-pen mr-1"></i>수정하기</button>`;
+                }
+                document.getElementById('view-modal-footer').innerHTML = footer;
+
+                document.getElementById('view-modal').style.display = 'flex';
+                window.lockBodyScroll();
+                window.pushModalNav();
+            };
+
+            // 목록에 붙일 '보기' 버튼 HTML
+            window.viewBtn = function(type, id, size){
+                const cls = (size === 'sm')
+                    ? 'text-[9px] px-1.5 py-0.5'
+                    : 'text-[10px] px-2 py-1';
+                return `<button onclick="event.stopPropagation();openViewModal('${type}','${String(id).replace(/'/g,"\\'")}')"
+                    class="${cls} border border-slate-300 text-slate-600 rounded hover:bg-slate-100 font-bold mr-1 flex-shrink-0"
+                    title="정보 보기"><i class="fa-regular fa-eye mr-0.5"></i>보기</button>`;
+            };
+
+            window.closeViewModal = function(){
+                const el = document.getElementById('view-modal');
+                if(!el || el.style.display !== 'flex') return;
+                el.style.display = 'none';
+                window.unlockBodyScroll();
+                window.popModalNav();
+            };
+
+            // 행 클릭으로도 보기 모달 열기 (버튼/링크/입력요소 클릭은 제외)
+            document.addEventListener('click', function(e){
+                const tr = e.target.closest('[data-view-type][data-view-id]');
+                if(!tr) return;
+                if(e.target.closest('button, a, input, select, textarea, label')) return;
+                window.openViewModal(tr.getAttribute('data-view-type'), tr.getAttribute('data-view-id'));
+            });
+        })();
+
         function editMember(id){
             const r=(window.memberList||[]).find(x=>x.id===id);if(!r)return;
             document.getElementById('m-edit-id').value=id;
@@ -5972,7 +6261,7 @@
                 else estDisplay=`인 ${fm(intE)} · 익 ${fm(extE)}`;
                 const marginDisplay = totalM>0 ? `${window.fmtAmt(totalM)} <span class="text-slate-400 font-normal">(${overallRate}%)</span>` : '<span class="text-slate-300">-</span>';
                 const rowBg = r._deleted ? 'bg-red-50/30' : 'bg-white';
-                return `<tr class="${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'} group">
+                return `<tr data-view-type="interior" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'} group">
                     <td data-label="등록일" class="p-2 text-[11px] text-slate-500 whitespace-nowrap">${r.registerDate||'-'}</td><td data-label="약사명" class="p-2 font-bold whitespace-nowrap">${r.name||'-'}</td><td data-label="약국명" class="p-2 whitespace-nowrap">${r.pharmacy||'-'}</td>
                     <td data-label="유형" class="p-2 whitespace-nowrap">${sBadge(r.type)}</td><td data-label="상태" class="p-2 whitespace-nowrap">${sBadge(r.status)}</td>
                     <td data-label="담당자" class="p-2 text-[11px] whitespace-nowrap font-bold">${r.manager||'-'}</td>
@@ -5983,7 +6272,7 @@
                         <div class="flex gap-1 justify-end flex-nowrap">
                         ${r._deleted
                             ? `<button onclick="restoreInterior('${r.id}')" class="text-[10px] border border-emerald-300 text-emerald-600 rounded px-1.5 py-1 hover:bg-emerald-50 font-bold">↩복구</button><button onclick="permanentDeleteInterior('${r.id}')" class="text-[10px] border border-red-400 text-red-600 rounded px-1.5 py-1 hover:bg-red-50 font-bold">삭제</button>`
-                            : `<button onclick="editInterior('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50">수정</button><button onclick="deleteInterior('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
+                            : window.viewBtn('interior', r.id) + `<button onclick="event.stopPropagation();editInterior('${r.id}')" class="text-[10px] border rounded px-2 py-1 hover:bg-slate-50">수정</button><button onclick="event.stopPropagation();deleteInterior('${r.id}')" class="text-[10px] border border-red-200 text-red-500 rounded px-2 py-1 hover:bg-red-50">삭제</button>`
                         }
                         </div>
                     </td>
@@ -6042,7 +6331,7 @@
                             <span class="text-sm font-bold truncate">${r.name}</span>
                             <span class="text-[10px] text-slate-400 truncate">${r.pharmacy||''}</span>
                         </div>
-                        <button onclick="editInterior('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-sky-600 border-sky-200 flex-shrink-0">수정</button>
+                        ${window.viewBtn('interior', r.id, 'sm')}<button onclick="event.stopPropagation();editInterior('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-sky-600 border-sky-200 flex-shrink-0">수정</button>
                     </div>
                     <div class="flex items-center justify-between text-[10px] bg-slate-50 rounded-lg px-2 py-1.5">
                         <span class="text-slate-500">진행시점 <b class="text-slate-700">${r.expectedDate||'미정'}</b></span>
@@ -6071,7 +6360,7 @@
                             <span class="text-sm font-bold truncate">${r.name}</span>
                             <span class="text-[10px] text-slate-400 truncate">${r.pharmacy||''}</span>
                         </div>
-                        <button onclick="editInterior('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-amber-600 border-amber-200 flex-shrink-0">수정</button>
+                        ${window.viewBtn('interior', r.id, 'sm')}<button onclick="event.stopPropagation();editInterior('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-amber-600 border-amber-200 flex-shrink-0">수정</button>
                     </div>
                     <div class="bg-slate-50 rounded-lg px-2 py-0.5">${rows}</div>
                 </div>`;
@@ -6305,9 +6594,132 @@
             if(editId){const idx=window.interiorList.findIndex(x=>x.id===editId);if(idx>-1)window.interiorList[idx]=record;}
             else{window.interiorList.unshift(record);}
             window.saveInteriors&&window.saveInteriors();
+            // ★ 매출관리 → 개설행정 인테리어 업체/담당 자동 기입
+            window.syncInteriorToAdmin && window.syncInteriorToAdmin(record);
             window.renderInteriors();
             closeInteriorModal();
         }
+
+        // ══════════════════════════════════════════════════════════
+        //  매출관리(인익스테리어) → 개설행정 자동 연동  — 2026-08-03 추가
+        //  상태가 '진행확정' 이상이 되면 개설행정의 '인테리어 업체/담당' 칸에
+        //  업체명 / 담당자를 자동 기입한다.
+        //  ※ 이미 값이 입력되어 있으면 덮어쓰지 않는다 (수기 입력 우선).
+        //    값이 다를 경우 개설행정 화면에서 '매출관리와 다름' 안내만 표시.
+        // ══════════════════════════════════════════════════════════
+        window.INTERIOR_SYNC_STATUSES = ['진행확정','계약완료','시공중','완료'];
+        // 개설행정 '인테리어 업체/담당' 칸에 반영할 유형 (인테리어 계열만)
+        window.INTERIOR_SYNC_TYPES = ['인테리어','인익스테리어','익스테리어'];
+
+        function buildInteriorLabel(rec){
+            const partner = String(rec.partner||'').trim();
+            const mgr = String(rec.partnerManager||rec.manager||'').trim();
+            if(!partner && !mgr) return '';
+            return [partner, mgr].filter(Boolean).join(' / ');
+        }
+        window.buildInteriorLabel = buildInteriorLabel;
+
+        // 인익스 레코드 1건을 개설행정 마스터에 반영
+        window.syncInteriorToAdmin = function(rec){
+            try{
+                if(!rec || rec._deleted) return false;
+                if(!window.INTERIOR_SYNC_STATUSES.includes(rec.status||'')) return false;
+                const t = String(rec.type||'');
+                if(!window.INTERIOR_SYNC_TYPES.some(x=>t.indexOf(x)>-1)) return false;
+
+                const label = buildInteriorLabel(rec);
+                if(!label) return false; // 업체·담당자 둘 다 비어있으면 넣을 게 없음
+
+                const target = findAdminPharmacy(rec);
+                if(!target) return false;
+
+                const cur = String(target.interior||'').trim();
+                if(cur){
+                    // 이미 값이 있으면 덮어쓰지 않음. 다르면 표시용 플래그만 기록.
+                    if(cur !== label) target._interiorMismatch = label;
+                    else delete target._interiorMismatch;
+                    return false;
+                }
+                target.interior = label;
+                delete target._interiorMismatch;
+                target._interiorAutoFilled = true; // 자동 기입 표시용
+                window.saveToFirebase && window.saveToFirebase();
+                if(typeof window.renderList === 'function') window.renderList();
+                return true;
+            }catch(e){ console.error('개설행정 인테리어 자동 연동 실패', e); return false; }
+        };
+
+        // 인익스 레코드 → 개설행정 약국 매칭
+        // 1순위: memberId, 2순위: 약국명 정규화, 3순위: 약사명
+        function findAdminPharmacy(rec){
+            const admins = (window.masterPharmacies||[]).filter(p=>!p._deleted);
+            if(!admins.length) return null;
+            // 약국명 정규화: 괄호 내용·공백 제거 (대시보드 전환율 매칭과 동일 규칙)
+            const cp = v => String(v||'').replace(/\([^)]*\)/g,'').replace(/\s/g,'').trim();
+            if(rec.memberId != null){
+                const byMember = admins.find(p => p.memberId != null && String(p.memberId) === String(rec.memberId));
+                if(byMember) return byMember;
+            }
+            const ph = cp(rec.pharmacy);
+            if(ph){
+                const byPharm = admins.filter(p => cp(p.name) === ph);
+                if(byPharm.length === 1) return byPharm[0];
+            }
+            const nm = String(rec.name||'').trim();
+            if(nm){
+                const byName = admins.filter(p => String(p.pharmacist||'').trim() === nm);
+                if(byName.length === 1) return byName[0];
+            }
+            return null; // 모호하면 자동 기입하지 않음 (오연결 방지)
+        }
+        window.findAdminPharmacy = findAdminPharmacy;
+
+        // 개설행정 편집 패널: 매출관리 연동 상태 안내
+        window.renderInteriorHint = function(p){
+            const box = document.getElementById('edit-interior-hint');
+            if(!box) return;
+            box.className = 'hidden mt-1 text-[10px] leading-relaxed';
+            box.innerHTML = '';
+            if(!p) return;
+
+            // 이 약국에 연결된 인익스 레코드 중 진행확정 이상인 것
+            const rec = (window.interiorList||[]).filter(r=>{
+                if(r._deleted) return false;
+                if(!window.INTERIOR_SYNC_STATUSES.includes(r.status||'')) return false;
+                const t=String(r.type||'');
+                if(!window.INTERIOR_SYNC_TYPES.some(x=>t.indexOf(x)>-1)) return false;
+                return findAdminPharmacy(r) === p;
+            })[0];
+
+            if(!rec) return;
+            const label = buildInteriorLabel(rec);
+            if(!label) return;
+            const cur = String(p.interior||'').trim();
+
+            if(!cur){
+                box.className = 'mt-1 text-[10px] leading-relaxed text-blue-600';
+                box.innerHTML = `<i class="fa-solid fa-link mr-1"></i>매출관리 연동: <b>${label}</b>
+                    <button type="button" onclick="document.getElementById('edit-input-interior').value='${label.replace(/'/g,"\\'")}';this.parentNode.classList.add('hidden');"
+                        class="ml-1 border border-blue-300 text-blue-600 rounded px-1.5 py-0.5 hover:bg-blue-50 font-bold">가져오기</button>`;
+            } else if(cur !== label){
+                box.className = 'mt-1 text-[10px] leading-relaxed text-amber-600';
+                box.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i>매출관리와 다름 → <b>${label}</b>
+                    <button type="button" onclick="document.getElementById('edit-input-interior').value='${label.replace(/'/g,"\\'")}';this.parentNode.classList.add('hidden');"
+                        class="ml-1 border border-amber-300 text-amber-700 rounded px-1.5 py-0.5 hover:bg-amber-50 font-bold">이 값으로 변경</button>`;
+            } else {
+                box.className = 'mt-1 text-[10px] leading-relaxed text-emerald-600';
+                box.innerHTML = `<i class="fa-solid fa-check mr-1"></i>매출관리와 일치`;
+            }
+        };
+
+        // 전체 일괄 동기화 (기존 데이터 소급 반영용)
+        window.syncAllInteriorsToAdmin = function(silent){
+            const list = (window.interiorList||[]).filter(r=>!r._deleted);
+            let n = 0;
+            list.forEach(r => { if(window.syncInteriorToAdmin(r)) n++; });
+            if(!silent) alert(n>0 ? `개설행정 인테리어 업체 ${n}건이 자동 기입되었습니다.` : '자동 기입할 항목이 없습니다.\n(이미 입력되어 있거나, 매칭되는 약국이 없습니다)');
+            return n;
+        };
         function deleteInterior(id){
             if(!confirm('리스트에서 삭제하시겠습니까?\n\n※ 데이터는 Firebase에 보존되며 언제든 복구 가능합니다.'))return;
             const item=(window.interiorList||[]).find(x=>x.id===id);
@@ -6855,7 +7267,7 @@
                 // 브라우저 탭 타이틀 동적 변경
                 document.title = `${p.name} | ${p.pharmacist} 약사님 개설행정 현황`;
             } else {
-                document.getElementById('edit-input-name').value = p.name; document.getElementById('edit-input-region').value = p.region || "서울"; document.getElementById('edit-input-pharmacist').value = p.pharmacist; document.getElementById('edit-input-manager').value = p.manager || ""; document.getElementById('edit-input-contract-date').value = p.contractDate || ""; document.getElementById('edit-input-open-date').value = p.openDate; document.getElementById('edit-input-interior').value = p.interior || ""; renderList();
+                document.getElementById('edit-input-name').value = p.name; document.getElementById('edit-input-region').value = p.region || "서울"; document.getElementById('edit-input-pharmacist').value = p.pharmacist; document.getElementById('edit-input-manager').value = p.manager || ""; document.getElementById('edit-input-contract-date').value = p.contractDate || ""; document.getElementById('edit-input-open-date').value = p.openDate; document.getElementById('edit-input-interior').value = p.interior || ""; window.renderInteriorHint && window.renderInteriorHint(p); renderList();
                 const cardChk = document.getElementById('edit-input-card-used'); if(cardChk) cardChk.checked = !!p.cardBenefitUsed;
                 // 양도양수인데 STEP 1이 없으면 수동 추가 버튼 노출
                 const step1Btn = document.getElementById('btn-add-transfer-step1');
