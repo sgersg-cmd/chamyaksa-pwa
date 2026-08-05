@@ -8909,9 +8909,57 @@
             if (!tm[key]) return;
             const st = tm[key].find(x => x.step === step); if(!st) return;
             st.status = s;
+            // ── 「개국 완료」를 완료로 바꾸면 그날을 실제 개국일로 확정 ──
+            // 가입자관리에 따로 들어가서 오픈일을 고칠 필요가 없도록 자동 반영한다.
+            if (s === '완료' && String(st.title||'').replace(/\s/g,'') === '개국완료') {
+                confirmOpenDate(key);
+            }
             save(); refresh();
             if (!isAdminView) window.logActivity('setStatus', id, (window.masterPharmacies||[]).find(x=>String(x.id)===String(id)));
         }
+        // 개국 완료 처리 → 오픈일 확정 (개설행정 + 가입자관리 동시 반영)
+        function confirmOpenDate(id){
+            const p = (window.masterPharmacies||[]).find(x=>String(x.id)===String(id));
+            if(!p) return;
+            const today = new Date().toISOString().slice(0,10);
+            const planned = String(p.openDate||'').trim();
+            // 예정일이 이미 지났으면 그 날짜가 실제 개국일 → 그대로 두고,
+            // 비었거나 아직 오지 않은 날짜면 오늘로 확정한다.
+            const finalDate = (planned && planned <= today) ? planned : today;
+            const changed = planned !== finalDate;
+            p.openDate = finalDate;
+            p.openConfirmed = true;
+            p.openConfirmedAt = new Date().toISOString();
+            // 가입자관리로 전파
+            const m = (window.memberList||[]).find(x => !x._deleted && (
+                String(x.id) === String(p.memberId) ||
+                (x.name === p.pharmacist && x.pharmacy === p.name)));
+            let memberMsg = '';
+            if(m){
+                if(m.openDate !== finalDate){ m.openDate = finalDate; memberMsg = ' · 가입자관리 오픈일도 함께 갱신'; }
+                window.saveMembers && window.saveMembers();
+            } else {
+                memberMsg = ' · ⚠ 가입자관리에서 연결된 회원을 찾지 못했습니다';
+            }
+            if(window.showToast) window.showToast(`개국일 ${finalDate} 확정${changed?' (예정일에서 변경)':''}${memberMsg}`);
+            else showOpenDateNotice(finalDate, changed, memberMsg);
+        }
+        // 개국일 확정 안내 (3초 후 자동 사라짐)
+        function showOpenDateNotice(date, changed, extra){
+            let el = document.getElementById('opendate-notice');
+            if(!el){
+                el = document.createElement('div');
+                el.id = 'opendate-notice';
+                el.className = 'fixed bottom-20 left-1/2 -translate-x-1/2 z-[80] bg-slate-900 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-2xl max-w-[90vw] text-center leading-relaxed';
+                document.body.appendChild(el);
+            }
+            el.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400 mr-1.5"></i>개국일 <b>${date}</b> 확정${changed?' <span class="text-amber-300">(예정일에서 변경)</span>':''}`
+                + (extra ? `<br><span class="font-normal text-slate-300">${extra.replace(/^ · /,'')}</span>` : '');
+            el.style.display = 'block';
+            clearTimeout(window.__odnT);
+            window.__odnT = setTimeout(()=>{ el.style.display='none'; }, 4000);
+        }
+        window.confirmOpenDate = confirmOpenDate;
         function updateVigo(id, step, v) {
             const key = String(id);
             const tm = window.timelineMap || {};
