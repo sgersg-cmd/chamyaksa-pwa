@@ -29,6 +29,32 @@
     <meta name="theme-color" content="#0284c7">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+
+    <!-- ══════════════════════════════════════════════════════════
+         홈 화면 아이콘 실행 시 약사 링크(?id=) 복원  — 2026-08-05 추가
+         안드로이드는 홈 화면 추가 시 manifest의 start_url(=관리자 주소)로
+         실행되어 ?id= 가 사라짐 → 약사님이 로그인 화면을 보게 되는 문제 방지.
+         · 약사 링크로 접속한 적이 있으면 id 를 저장
+         · 홈 화면 아이콘(standalone)으로 id 없이 실행되면 저장된 id 로 복원
+         · 관리자 로그인 이력이 있는 기기에서는 복원하지 않음
+    ═══════════════════════════════════════════════════════════ -->
+    <script>
+    (function(){
+        try{
+            var id = new URLSearchParams(location.search).get('id');
+            if(id){ localStorage.setItem('chammate_shared_id', id); return; }
+            var standalone = window.matchMedia('(display-mode: standalone)').matches
+                          || window.navigator.standalone === true
+                          || document.referrer.startsWith('android-app://');
+            if(!standalone) return;
+            var saved = localStorage.getItem('chammate_shared_id');
+            if(saved && localStorage.getItem('chammate_is_admin') !== '1'){
+                location.replace(location.pathname + '?id=' + encodeURIComponent(saved));
+            }
+        }catch(e){}
+    })();
+    </script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -342,8 +368,11 @@
             } else if(user){
                 // 관리자 로그인 완료
                 window._currentUser=user;
+                try{ localStorage.setItem('chammate_is_admin','1'); }catch(e){}  // 이 기기는 관리자용 → 약사 링크 복원 금지
                 document.getElementById('login-screen')?.remove();
-                document.title = '참메이트 통합관리 시스템 v13.9';
+                window._loginDone = true;
+                window.dispatchEvent(new Event('chammate:login'));
+                document.title = '참메이트 통합관리 시스템 v14.0';
                 hideSplash();
                 const uel=document.getElementById('admin-user-email');
                 if(uel)uel.textContent=user.email;
@@ -795,7 +824,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v13.9</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v14.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -8886,6 +8915,170 @@
                     .catch(err => console.log('SW 등록 실패:', err));
             });
         }
+    </script>
+    <!-- ══════════════════════════════════════════════════════════
+         홈 화면에 추가 (PWA 설치) 유도 — 모바일 전용, 2026-08-05 추가
+         · 관리자/약사 페이지 모두 동작
+         · PC에서는 표시되지 않음
+         · 이미 설치되어 실행 중이면 표시되지 않음
+         · 안드로이드: 네이티브 설치 프롬프트 / iOS: 수동 안내
+    ═══════════════════════════════════════════════════════════ -->
+    <div id="pwa-install-fab" class="hidden fixed bottom-4 right-4 z-[70]">
+        <button onclick="openPwaGuide()"
+            class="flex items-center gap-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold pl-3 pr-4 py-2.5 rounded-full shadow-lg shadow-sky-600/30 active:scale-95 transition">
+            <i class="fa-solid fa-mobile-screen-button text-sm"></i>홈 화면에 추가
+        </button>
+    </div>
+
+    <div id="pwa-modal" class="fixed inset-0 z-[75] bg-black/60 p-4 backdrop-blur-sm" style="display:none; align-items:flex-end; justify-content:center;" onclick="if(event.target===this)closePwaGuide()">
+        <div class="bg-white rounded-t-2xl sm:rounded-2xl max-w-sm w-full shadow-2xl mb-0 sm:mb-auto sm:mt-auto overflow-hidden">
+            <div class="p-5 pb-4 text-center border-b">
+                <img src="icon-192.png" alt="참메이트" class="w-16 h-16 rounded-2xl mx-auto shadow-md mb-3">
+                <h3 class="text-base font-black text-slate-900">참메이트를 앱처럼 사용하세요</h3>
+                <p class="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    홈 화면에 추가하면 주소창 없이 바로 열리고,<br>앱 아이콘으로 빠르게 접속할 수 있습니다.
+                </p>
+            </div>
+            <div id="pwa-modal-body" class="p-5"></div>
+            <div class="px-5 pb-5 flex gap-2">
+                <button onclick="dismissPwa(30)" class="flex-1 text-[11px] px-3 py-2.5 rounded-xl border bg-white hover:bg-slate-50 font-bold text-slate-500">다시 보지 않기</button>
+                <button onclick="closePwaGuide()" class="flex-1 text-[11px] px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function(){
+        const KEY='pwa_dismiss_until';
+        const isMobile = () =>
+            /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') ||
+            (('ontouchstart' in window) && Math.min(screen.width, screen.height) < 820);
+        const isIOS = () =>
+            /iPhone|iPad|iPod/i.test(navigator.userAgent || '') ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS 대응
+        const isInstalled = () =>
+            window.matchMedia('(display-mode: standalone)').matches ||
+            window.navigator.standalone === true ||
+            document.referrer.startsWith('android-app://');
+        const dismissed = () => {
+            try{ const t=localStorage.getItem(KEY); return t && Date.now() < parseInt(t,10); }catch(e){ return false; }
+        };
+
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', e=>{
+            e.preventDefault();          // 브라우저 기본 배너 억제 → 우리가 원하는 시점에 호출
+            deferredPrompt = e;
+        });
+        window.addEventListener('appinstalled', ()=>{
+            deferredPrompt = null;
+            document.getElementById('pwa-install-fab')?.classList.add('hidden');
+            closePwaGuide();
+        });
+
+        window.dismissPwa = function(days){
+            try{ localStorage.setItem(KEY, String(Date.now() + days*24*60*60*1000)); }catch(e){}
+            document.getElementById('pwa-install-fab')?.classList.add('hidden');
+            closePwaGuide();
+        };
+
+        window.openPwaGuide = function(){
+            const body = document.getElementById('pwa-modal-body');
+            if(isIOS()){
+                // iOS는 프로그램적 설치가 불가 → Safari 공유 메뉴 안내
+                body.innerHTML = `
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2">iPhone / iPad · Safari</p>
+                    <ol class="space-y-2.5">
+                        <li class="flex gap-2.5 items-start">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">1</span>
+                            <span class="text-xs text-slate-700 leading-relaxed">화면 아래 <b>공유 버튼</b> <i class="fa-solid fa-arrow-up-from-bracket text-sky-600 mx-0.5"></i> 을 누릅니다.</span>
+                        </li>
+                        <li class="flex gap-2.5 items-start">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">2</span>
+                            <span class="text-xs text-slate-700 leading-relaxed">메뉴를 내려서 <b>홈 화면에 추가</b> <i class="fa-regular fa-square-plus text-sky-600 mx-0.5"></i> 를 선택합니다.</span>
+                        </li>
+                        <li class="flex gap-2.5 items-start">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">3</span>
+                            <span class="text-xs text-slate-700 leading-relaxed">오른쪽 위 <b>추가</b>를 누르면 완료됩니다.</span>
+                        </li>
+                    </ol>
+                    <p class="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-3 leading-relaxed">
+                        <i class="fa-solid fa-circle-info mr-1"></i>크롬 등 다른 브라우저에서는 추가되지 않습니다. <b>Safari</b>로 열어주세요.
+                    </p>`;
+            } else if(deferredPrompt){
+                body.innerHTML = `
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Android</p>
+                    <button id="pwa-do-install" class="w-full bg-sky-600 hover:bg-sky-700 text-white text-sm font-bold py-3 rounded-xl active:scale-95 transition">
+                        <i class="fa-solid fa-download mr-1.5"></i>홈 화면에 추가하기
+                    </button>
+                    <p class="text-[10px] text-slate-400 mt-2 text-center">버튼을 누르면 설치 안내창이 표시됩니다.</p>`;
+                document.getElementById('pwa-do-install').onclick = async function(){
+                    if(!deferredPrompt) return;
+                    deferredPrompt.prompt();
+                    try{
+                        const {outcome} = await deferredPrompt.userChoice;
+                        if(outcome==='accepted'){
+                            document.getElementById('pwa-install-fab')?.classList.add('hidden');
+                            closePwaGuide();
+                        }
+                    }catch(e){}
+                    deferredPrompt = null;
+                };
+            } else {
+                // 설치 프롬프트를 아직 못 받았거나 미지원 브라우저
+                body.innerHTML = `
+                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2">Android · 브라우저 메뉴</p>
+                    <ol class="space-y-2.5">
+                        <li class="flex gap-2.5 items-start">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">1</span>
+                            <span class="text-xs text-slate-700 leading-relaxed">오른쪽 위 <b>메뉴</b> <i class="fa-solid fa-ellipsis-vertical text-sky-600 mx-0.5"></i> 를 누릅니다.</span>
+                        </li>
+                        <li class="flex gap-2.5 items-start">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">2</span>
+                            <span class="text-xs text-slate-700 leading-relaxed"><b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 선택합니다.</span>
+                        </li>
+                    </ol>
+                    <p class="text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-3 leading-relaxed">
+                        <i class="fa-solid fa-circle-info mr-1"></i>카카오톡·인스타그램 등 앱 내 브라우저에서는 추가할 수 없습니다. <b>Chrome</b>으로 열어주세요.
+                    </p>`;
+            }
+            document.getElementById('pwa-modal').style.display='flex';
+            if(window.lockBodyScroll) window.lockBodyScroll();
+        };
+
+        window.closePwaGuide = function(){
+            const el=document.getElementById('pwa-modal');
+            if(!el || el.style.display!=='flex') return;
+            el.style.display='none';
+            if(window.unlockBodyScroll) window.unlockBodyScroll();
+        };
+
+        // ── 진입 처리 ──
+        // 관리자 페이지는 로그인 화면(z-9998)이 설치 팝업을 가리므로,
+        // 로그인이 끝난 뒤에 띄운다. 약사 페이지는 로그인이 없으므로 즉시 진행.
+        function ready(cb){
+            const isPharmacistPage = !!new URLSearchParams(location.search).get('id');
+            if(isPharmacistPage || window._loginDone) return cb();
+            window.addEventListener('chammate:login', cb, {once:true});
+        }
+        function boot(){
+            if(!isMobile() || isInstalled()) return;   // PC·설치완료 상태에서는 아무것도 하지 않음
+            document.getElementById('pwa-install-fab')?.classList.remove('hidden');
+            if(dismissed()) return;
+            ready(showLater);
+        }
+        function showLater(){
+            // 최초 진입 팝업 (화면 로딩이 끝난 뒤 자연스럽게)
+            setTimeout(()=>{
+                if(document.getElementById('pwa-modal').style.display==='flex') return;
+                const others=['member-modal','consult-modal','interior-modal','pos-modal','view-modal','succession-modal','register-modal'];
+                if(others.some(id=>{const e=document.getElementById(id);return e&&e.style.display==='flex';})) return;
+                openPwaGuide();
+                try{ localStorage.setItem(KEY, String(Date.now() + 3*24*60*60*1000)); }catch(e){}  // 자동 팝업은 3일 간격
+            }, 2500);
+        }
+        if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+        else boot();
+    })();
     </script>
 </body>
 </html>
