@@ -1846,6 +1846,10 @@
             <div id="archive-enddate-wrap" class="px-5 pb-2">
                 <label class="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block">실제 종료일 <span class="text-slate-300 normal-case">· 월별 회원 변동 집계 기준</span></label>
                 <input type="date" id="archive-enddate-input" class="w-full border border-slate-200 rounded-lg p-2 text-xs">
+                <label class="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-600 cursor-pointer">
+                    <input type="checkbox" id="archive-enddate-unknown" onchange="document.getElementById('archive-enddate-input').disabled=this.checked; if(this.checked) document.getElementById('archive-enddate-input').value='';">
+                    종료일을 <b>확인할 수 없음</b> (오래되어 자료 없음)
+                </label>
                 <p class="text-[10px] text-slate-400 mt-1">폐업·양도양수·이전이 <b>실제로 일어난 날</b>을 입력하세요. 등록일이 아닙니다.</p>
                 <p class="text-[10px] text-slate-500 bg-slate-50 border rounded-lg p-2 mt-1.5 leading-relaxed">
                     <b>「약국 이전」은 약국명이 그대로이고 소재지만 바뀐 경우</b>에만 선택하세요.<br>
@@ -3428,14 +3432,15 @@
             const succOf = {}; all.forEach(r=>{ if(!r._deleted && r.successorOf) succOf[String(r.successorOf)] = r; });
             const md = {};
             const g = m => (md[m] = md[m] || {vNew:0,vRe:0,vMove:0,vClose:0,vTrans:0,vQuit:0});
-            let noEndDate = 0;
+            let noEndDate = 0, unknownEnd = 0;
             all.forEach(r=>{
                 if(r._deleted){
                     if(r._archiveType !== 'archive') return;          // 삭제보관함 제외
                     const rs = String(r._archiveReason||'');
                     // 동일 약국이 소재지만 옮긴 건만 종료에서 제외
                     if(window.isSamePharmacyMove(r, succOf[String(r.id)])) return;
-                    if(!r.endDate){ noEndDate++; return; }
+                    if(r.endDateUnknown && !r.endDate){ unknownEnd++; return; }  // 확인 불가로 확정된 건
+                    if(!r.endDate){ noEndDate++; return; }            // 아직 입력하지 않은 건
                     const m = String(r.endDate).slice(0,7); if(!m) return;
                     if(rs.includes('폐업')) g(m).vClose++;
                     else if(rs.includes('양도')) g(m).vTrans++;
@@ -3472,7 +3477,7 @@
             startOf[months[anchor]] = openNow - net(md[months[anchor]]);
             for(let i=anchor-1; i>=0; i--){ endOf[months[i]] = startOf[months[i+1]]; startOf[months[i]] = endOf[months[i]] - net(md[months[i]]); }
             for(let i=anchor+1; i<months.length; i++){ startOf[months[i]] = endOf[months[i-1]]; endOf[months[i]] = startOf[months[i]] + net(md[months[i]]); }
-            return {md, months, startOf, endOf, net, openNow, noEndDate, curM};
+            return {md, months, startOf, endOf, net, openNow, noEndDate, unknownEnd, curM};
         };
         window.renderOperatingChange = function(isMob, monthCount){
             const R = window.computeOperatingChange();
@@ -3528,6 +3533,7 @@
                 ${body}
                 <p class="text-[9px] text-slate-400 mt-1.5">※ 운영 약국 = 활성 회원 중 실제 약국을 운영 중인 곳 (약국명 미정·약사회원 제외).<br>※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 운영 약국 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 개설·재개설·이전은 <b>개국일</b>, 종료는 <b>실제 종료일</b> 기준입니다. 개국일이 비어 있으면 가입일로 대체됩니다.<br>※ 개국 예정일이 미래인 곳은 「예정」으로 표시되며 현재 운영 약국 수에는 포함되지 않습니다.</p>
                 ${R.noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${R.noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
+                ${R.unknownEnd>0?`<p class="text-[10px] text-slate-500 bg-slate-50 border rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-circle-question mr-1"></i><b>종료일 확인 불가 ${R.unknownEnd}건</b>은 자료가 남아 있지 않아 월별 집계에서 제외됩니다. 현재 운영 약국 수에는 영향이 없습니다.</p>`:''}
             </div>`;
         };
 
@@ -6669,8 +6675,10 @@
             item._archiveType   = _archiveDialogType;
             item._archiveReason = reason;
             item._deletedAt     = new Date().toISOString();
+            const _unk = !!document.getElementById('archive-enddate-unknown')?.checked;
             const _end = (document.getElementById('archive-enddate-input')?.value||'').trim();
-            if(_end) item.endDate = _end; else delete item.endDate;
+            if(_unk){ delete item.endDate; item.endDateUnknown = true; }
+            else { delete item.endDateUnknown; if(_end) item.endDate = _end; else delete item.endDate; }
             window.saveMembers && window.saveMembers();
             window.renderMembers();
             document.getElementById('archive-dialog').style.display = 'none';
@@ -6687,7 +6695,10 @@
             // 완전 초기화
             archiveDialogSetType('archive');
             const _ed = document.getElementById('archive-enddate-input');
-            if(_ed) _ed.value = item.endDate || new Date().toISOString().slice(0,10);
+            const _eu = document.getElementById('archive-enddate-unknown');
+            if(_eu) _eu.checked = !!item.endDateUnknown;
+            if(_ed){ _ed.disabled = !!item.endDateUnknown;
+                     _ed.value = item.endDateUnknown ? '' : (item.endDate || new Date().toISOString().slice(0,10)); }
             document.getElementById('archive-dialog').style.display = 'flex';
         }
 
