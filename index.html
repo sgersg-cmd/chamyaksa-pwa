@@ -3374,6 +3374,122 @@
 
         // ── 대시보드 ──
         // ── 대시보드 ──
+        // ══════════════════════════════════════════════════════════
+        //  운영 약국 변동 집계 — 2026-08-05 추가
+        //
+        //  신규 개설 : 승계 이력 없는 신규 가입자          (가입일 기준)
+        //  재개설    : 기존 회원이 새 약국을 연 건          (새 약국 개국일 기준)
+        //  약국 이전 : 동일 약국이 소재지만 옮긴 건         (운영 약국 수 불변 → 순증감 제외)
+        //  종료      : 폐업 / 양도양수 / 탈퇴·기타          (실제 종료일 endDate 기준)
+        //
+        //  '양도양수 및 약국 이전'처럼 종료와 이전이 섞인 건은 실제로 약국이 한 번
+        //  없어졌다가 다시 생긴 것이므로, 종료(-1) + 재개설(+1)로 잡아야 순증감이 맞는다.
+        //  따라서 '순수 이전'만 이전으로 판정한다.
+        // ══════════════════════════════════════════════════════════
+        window.isPureRelocation = function(reason){
+            const s = String(reason||'');
+            return s.includes('이전') && !s.includes('양도') && !s.includes('폐업') && !s.includes('탈퇴');
+        };
+        // 운영 중인 약국 = 활성 회원 중 실제로 약국을 운영하는 곳 (약국명 미정·약사회원 제외)
+        window.isOperatingPharmacy = function(r){
+            if(r._deleted) return false;
+            const p = String(r.pharmacy||'').trim();
+            return !!p && !/^(약국명\s*미정|약사회원|미정)/.test(p);
+        };
+        window.computeOperatingChange = function(){
+            const all = window.memberList || [];
+            const archById = {}; all.forEach(r=>{ if(r._deleted) archById[String(r.id)] = r; });
+            const md = {};
+            const g = m => (md[m] = md[m] || {vNew:0,vRe:0,vMove:0,vClose:0,vTrans:0,vQuit:0});
+            let noEndDate = 0;
+            all.forEach(r=>{
+                if(r._deleted){
+                    if(r._archiveType !== 'archive') return;          // 삭제보관함 제외
+                    const rs = String(r._archiveReason||'');
+                    if(window.isPureRelocation(rs)) return;           // 이전은 종료가 아님
+                    if(!r.endDate){ noEndDate++; return; }
+                    const m = String(r.endDate).slice(0,7); if(!m) return;
+                    if(rs.includes('폐업')) g(m).vClose++;
+                    else if(rs.includes('양도')) g(m).vTrans++;
+                    else g(m).vQuit++;
+                    return;
+                }
+                const prev = r.successorOf ? archById[String(r.successorOf)] : null;
+                if(prev){
+                    const m = String(r.openDate || r.date || '').slice(0,7); if(!m) return;
+                    if(window.isPureRelocation(prev._archiveReason)) g(m).vMove++; else g(m).vRe++;
+                } else {
+                    const m = String(r.date||'').slice(0,7); if(m) g(m).vNew++;
+                }
+            });
+            const openNow = all.filter(window.isOperatingPharmacy).length;
+            const net = d => (d.vNew||0)+(d.vRe||0)-((d.vClose||0)+(d.vTrans||0)+(d.vQuit||0));
+            // 각 월의 '최종' 값을 현재 실측치에서 역산 → 마지막 월이 반드시 현재 수와 일치
+            const months = Object.keys(md).sort();
+            const startOf = {}, endOf = {};
+            let run = openNow;
+            for(let i=months.length-1; i>=0; i--){
+                const m = months[i];
+                endOf[m] = run; startOf[m] = run - net(md[m]); run = startOf[m];
+            }
+            return {md, months, startOf, endOf, net, openNow, noEndDate};
+        };
+        window.renderOperatingChange = function(isMob, monthCount){
+            const R = window.computeOperatingChange();
+            const sM = R.months.slice(-(monthCount||6));
+            if(!sM.length) return '';
+            const nz = v => v>0 ? v : '-';
+            const nt = v => (v>0?'+':'') + v;
+            const HEAD = [['총(월초)','text-slate-500'],['신규 개설','text-emerald-600'],['재개설','text-teal-600'],
+                          ['약국 이전','text-slate-400'],['폐업','text-red-600'],['양도양수','text-orange-600'],
+                          ['탈퇴·기타','text-amber-600'],['순증감','text-blue-700'],['최종','text-slate-900']];
+            const row = m => { const d=R.md[m]; return [
+                [R.startOf[m]+'','text-slate-500'],[nz(d.vNew),'text-emerald-600'],[nz(d.vRe),'text-teal-600'],
+                [nz(d.vMove),'text-slate-400'],[nz(d.vClose),'text-red-600'],[nz(d.vTrans),'text-orange-600'],
+                [nz(d.vQuit),'text-amber-600'],[nt(R.net(d)),R.net(d)>=0?'text-blue-700':'text-red-700'],
+                [R.endOf[m]+'','text-slate-900']]; };
+            const sum = k => sM.reduce((s,m)=>s+(R.md[m][k]||0),0);
+            const sumNet = sM.reduce((s,m)=>s+R.net(R.md[m]),0);
+            let body;
+            if(isMob){
+                body = `<div class="space-y-2">${sM.map(m=>`
+                    <div class="bg-slate-50 rounded-xl border overflow-hidden">
+                        <div class="bg-emerald-50 px-3 py-2 border-b flex justify-between items-center">
+                            <span class="text-sm font-black text-emerald-700">${m.slice(2)}</span>
+                            <span class="text-[11px] font-bold text-slate-500">${R.startOf[m]}곳 → <b class="text-slate-900">${R.endOf[m]}곳</b></span>
+                        </div>
+                        <div class="p-3 grid grid-cols-1 gap-y-1.5 text-xs divide-y divide-slate-100">
+                        ${row(m).slice(1,-1).map((c,i)=>`<div class="flex justify-between items-center gap-2 pt-1.5 first:pt-0"><span class="text-slate-400">${HEAD[i+1][0]}</span><span class="font-bold ${c[1]}">${c[0]}</span></div>`).join('')}
+                        </div>
+                    </div>`).join('')}</div>`;
+            } else {
+                const th='px-1.5 py-2 whitespace-nowrap text-center', td='px-1.5 py-2 whitespace-nowrap text-center';
+                body = `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-[11px] border-collapse min-w-[620px]">
+                    <thead><tr class="bg-slate-50 border-b text-[10px] font-bold">
+                        <th class="${th} text-left">월</th>${HEAD.map(h=>`<th class="${th} ${h[1]}">${h[0]}</th>`).join('')}
+                    </tr></thead>
+                    <tbody class="divide-y">
+                    ${sM.map(m=>`<tr class="hover:bg-slate-50"><td class="${td} text-left font-bold">${m.slice(2)}</td>${row(m).map(c=>`<td class="${td} font-bold ${c[1]}">${c[0]}</td>`).join('')}</tr>`).join('')}
+                    <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
+                        <td class="${td} text-left text-blue-800">합계</td>
+                        <td class="${td} text-slate-600">${R.startOf[sM[0]]}</td>
+                        <td class="${td} text-emerald-700">${nz(sum('vNew'))}</td>
+                        <td class="${td} text-teal-700">${nz(sum('vRe'))}</td>
+                        <td class="${td} text-slate-500">${nz(sum('vMove'))}</td>
+                        <td class="${td} text-red-700">${nz(sum('vClose'))}</td>
+                        <td class="${td} text-orange-700">${nz(sum('vTrans'))}</td>
+                        <td class="${td} text-amber-700">${nz(sum('vQuit'))}</td>
+                        <td class="${td} ${sumNet>=0?'text-blue-800':'text-red-800'}">${nt(sumNet)}</td>
+                        <td class="${td} text-slate-900">${R.endOf[sM[sM.length-1]]}</td>
+                    </tr></tbody></table></div>`;
+            }
+            return `<div class="mt-4"><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-right-left text-emerald-600 mr-1"></i>월별 운영 약국 변동 <span class="text-[10px] text-slate-400 font-normal">(현재 ${R.openNow}곳)</span></p>
+                ${body}
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 운영 약국 = 활성 회원 중 실제 약국을 운영 중인 곳 (약국명 미정·약사회원 제외).<br>※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 운영 약국 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 재개설·이전은 새 약국 개국일, 종료는 실제 종료일 기준입니다.</p>
+                ${R.noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${R.noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
+            </div>`;
+        };
+
         function showMemberDashboard() {
             // ★ 활성 데이터만 집계 (아카이브 + 삭제보관함 모두 제외)
             const list = (window.memberList || []).filter(r => !r._deleted);
@@ -3516,6 +3632,7 @@
                 })()}
                 <p class="text-[9px] text-slate-400 mt-1.5">※ 가맹비 할인은 가입금액에 이미 반영된 금액입니다. 실마진에서 중복 차감하지 않습니다.</p>
             </div>
+            ${window.renderOperatingChange(window.innerWidth<640)}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                 <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-100">
                     <p class="text-xs font-bold text-indigo-700 mb-2"><i class="fa-solid fa-user-group mr-1"></i>연령대 분포 <span class="text-[10px] text-slate-400 font-normal">(총 ${activeCount}명, 보관함 제외)</span></p>
@@ -3751,38 +3868,7 @@
             }).length, m2a_d=members26.length;
             const pct=(n,d)=>d>0?Math.round(n/d*100):0;
 
-            const md={};const gc=m=>{if(!md[m])md[m]={c:0,j:0,nb:0,rb:0,f:0,p:0,rm:0,pt:0,iE:0,iM:0,iC:0,iT:0,pc:0,pf:0,ps:0,vNew:0,vRe:0,vMove:0,vClose:0,vTrans:0,vQuit:0};return md[m];};
-
-            // ── 회원 변동 집계 ──
-            // 신규개설 : 승계 이력이 없는 신규 가입자 (가입일 기준)
-            // 재개설   : 기존 회원이 새 약국을 연 건 (승계, 새 약국 개국일 기준)
-            // 약국 이전 : 동일 약국이 소재지만 옮긴 건 (회원 수 변동 없음)
-            // 종료     : 폐업 / 양도양수 / 탈퇴 (실제 종료일 endDate 기준)
-            const _allM = window.memberList||[];
-            const _archById = {}; _allM.forEach(r=>{ if(r._deleted) _archById[String(r.id)] = r; });
-            let _noEndDate = 0;
-            _allM.forEach(r=>{
-                if(r._deleted){
-                    const t = r._archiveType, rs = String(r._archiveReason||'');
-                    if(t !== 'archive') return;                 // 오입력·테스트 등 삭제보관함 제외
-                    if(rs.includes('이전')) return;              // 이전은 종료가 아님
-                    if(!r.endDate){ _noEndDate++; return; }      // 실제 종료일 없으면 집계 제외
-                    const m = String(r.endDate).slice(0,7); if(!m) return;
-                    const g = gc(m);
-                    if(rs.includes('폐업')) g.vClose++;
-                    else if(rs.includes('양도')) g.vTrans++;
-                    else g.vQuit++;
-                    return;
-                }
-                const prev = r.successorOf ? _archById[String(r.successorOf)] : null;
-                if(prev){
-                    const isMove = String(prev._archiveReason||'').includes('이전');
-                    const m = String(r.openDate || r.date || '').slice(0,7); if(!m) return;
-                    if(isMove) gc(m).vMove++; else gc(m).vRe++;
-                } else {
-                    const m = String(r.date||'').slice(0,7); if(m) gc(m).vNew++;
-                }
-            });
+            const md={};const gc=m=>{if(!md[m])md[m]={c:0,j:0,nb:0,rb:0,f:0,p:0,rm:0,pt:0,iE:0,iM:0,iC:0,iT:0,pc:0,pf:0,ps:0};return md[m];};
             consults.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){gc(m).c++;if(r.status==='가입완료')gc(m).j++;}});
             members.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){const g=gc(m);g.nb+=(r.newborn==='뉴본'?1:0);g.rb+=(r.newborn==='리본'?1:0);const _f=parseFloat(r.joinFee||0),_p=window.computeJoinPaid(r);g.f+=_f;g.p+=_p;g.rm+=(r.payment==='면제'?0:Math.max(0,_f-_p));g.pt+=parseFloat(r.joinPoint||0);}});
             interiors.forEach(r=>{const m=(r.registerDate||r.completeDate||'').slice(0,7);if(m){gc(m).iT++;if(r.status==='완료')gc(m).iC++;gc(m).iE+=parseFloat(r.intEstimate||0)+parseFloat(r.extEstimate||0)+parseFloat(r.chamEstimate||0)+parseFloat(r.pcpkgEstimate||0);gc(m).iM+=cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0);}});
@@ -3868,34 +3954,7 @@
                 bTable([['총 상담','text-blue-600'],['가입 전환율','text-emerald-600'],['뉴본','text-teal-600'],['리본','text-indigo-600'],['인익스 성사율','text-purple-600'],['포스 신규 가입자','text-sky-600'],['포스 가입 전환율','text-blue-500']],
                 (d,m)=>[[d.c,'text-blue-600'],[d.c>0?pct(d.j,d.c)+'%':'-','text-emerald-600'],[d.nb,'text-teal-600'],[d.rb,'text-indigo-600'],[d.iT>0?pct(d.iC,d.iT)+'%':'-','text-purple-600'],[d.pc>0?d.pc:'-','text-sky-600'],[d.j>0&&d.pc>0?pct(d.pc,d.j)+'%':'-','text-blue-500']])}</div>`:''}
 
-                <!-- 월별 회원 변동 -->
-                ${sM.length>0?`<div class="mt-4"><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-right-left text-emerald-600 mr-1"></i>월별 회원 변동</p>
-                ${(()=>{
-                    const net=d=>(d.vNew||0)+(d.vRe||0)-((d.vClose||0)+(d.vTrans||0)+(d.vQuit||0));
-                    const nz=v=>v>0?v:'-';
-                    const netTxt=v=>(v>0?'+':'')+v;
-                    if(isMob){
-                        return bCard((d,m)=>[
-                            ['신규 개설',nz(d.vNew),'text-emerald-600'],
-                            ['재개설 (기존회원)',nz(d.vRe),'text-teal-600'],
-                            ['약국 이전',nz(d.vMove),'text-slate-500'],
-                            ['폐업',nz(d.vClose),'text-red-600'],
-                            ['양도양수',nz(d.vTrans),'text-orange-600'],
-                            ['탈퇴·기타',nz(d.vQuit),'text-amber-600'],
-                            ['순증감',netTxt(net(d)),net(d)>=0?'text-blue-700':'text-red-700'],
-                        ]);
-                    }
-                    const sum=k=>sM.reduce((s,m)=>s+(md[m][k]||0),0);
-                    const sumNet=sM.reduce((s,m)=>s+net(md[m]),0);
-                    return bTable(
-                        [['신규 개설','text-emerald-600'],['재개설','text-teal-600'],['약국 이전','text-slate-500'],['폐업','text-red-600'],['양도양수','text-orange-600'],['탈퇴·기타','text-amber-600'],['순증감','text-blue-700']],
-                        d=>[[nz(d.vNew),'text-emerald-600'],[nz(d.vRe),'text-teal-600'],[nz(d.vMove),'text-slate-500'],[nz(d.vClose),'text-red-600'],[nz(d.vTrans),'text-orange-600'],[nz(d.vQuit),'text-amber-600'],[netTxt(net(d)),net(d)>=0?'text-blue-700':'text-red-700']],
-                        [[nz(sum('vNew')),'text-emerald-600'],[nz(sum('vRe')),'text-teal-600'],[nz(sum('vMove')),'text-slate-500'],[nz(sum('vClose')),'text-red-600'],[nz(sum('vTrans')),'text-orange-600'],[nz(sum('vQuit')),'text-amber-600'],[netTxt(sumNet),sumNet>=0?'text-blue-800':'text-red-800']],
-                        true);
-                })()}
-                <p class="text-[9px] text-slate-400 mt-1.5">※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 회원 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 재개설·이전은 새 약국 개국일, 종료는 실제 종료일 기준입니다.</p>
-                ${_noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${_noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
-                </div>`:''}
+                ${window.renderOperatingChange(isMob)}
             </div>
 
             <!-- ─ 탭2: 재무 분석 ─ -->
