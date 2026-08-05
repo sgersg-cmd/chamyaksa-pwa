@@ -56,6 +56,8 @@
     </script>
 
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1924,6 +1926,7 @@
                         <span id="m-branch-badge" class="text-[11px] bg-blue-50 border border-blue-200 text-blue-600 rounded-md px-2 py-0.5 font-bold" title="주소에서 자동 산출된 지점명"></span>
                         <span class="text-[9px] text-slate-400">※ 주소 기반 자동산출</span>
                     </div>
+
                 </div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">연락처</label><input type="text" id="m-phone" placeholder="010-0000-0000" oninput="formatPhone(this)" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">생년월일</label><input type="date" id="m-birth" onchange="updateMemberAge()" class="w-full border rounded-lg p-2.5"></div>
@@ -1935,7 +1938,7 @@
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">연령 <span class="text-slate-300">(자동)</span></label><input type="text" id="m-age-display" readonly placeholder="생년월일 입력 시 자동" class="w-full border rounded-lg p-2.5 bg-slate-50 text-slate-600"></div>
                 <div class="col-span-2">
                     <label class="block text-[9px] text-slate-400 font-bold mb-0.5 uppercase">주소 <span class="text-slate-300">(선택)</span></label>
-                    <p class="text-[9px] text-blue-500 mb-1">💡 <b>지번주소</b>로 입력하시면 지점명이 자동으로 산출됩니다 (예: 서울시 성북구 종암동 122)</p>
+                    <p class="text-[9px] text-blue-500 mb-1">💡 <b>도로명주소를 넣어도 지번주소로 자동 변환</b>되어 지점명이 산출됩니다</p>
                     <input type="text" id="m-address" placeholder="예: 서울시 성북구 종암동 122 (지번) 또는 서울시 성북구 종암로 122(종암동)" oninput="updateBranchBadge()" onblur="updateBranchBadge()" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">뉴본/리본</label>
                     <select id="m-newborn" class="w-full border rounded-lg p-2.5 bg-white">
@@ -5570,7 +5573,9 @@
             const tbody=document.getElementById('member-table-body'); if(!tbody)return;
             tbody.innerHTML=paged.length===0?`<tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">등록된 가입자가 없습니다</td></tr>`:
             paged.map(r=>{ const rowBg = r._deleted ? 'bg-red-50' : 'bg-white';
-                const branch = window.parseBranchFromAddress ? (window.parseBranchFromAddress(r.address||'') || '-') : '-';
+                const branch = String(r.branch||'').trim()
+                    || (window.parseBranchFromAddress ? (window.parseBranchFromAddress(r.address||'') || '') : '')
+                    || '-';
                 return `<tr data-view-type="member" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
                 <td class="px-2 py-2 text-center">${bulkRowCheckboxHtml('member', r.id)}</td>
                 <td data-label="가입일" class="px-2 py-2 text-[10px] whitespace-nowrap">${r.date||'-'}</td>
@@ -5736,6 +5741,20 @@
         // 서울: OO구 + OO동 → "OO구 OO점"   예) 성북구 종암동 → 성북구 종암점
         // 지방: OO시/OO군 + OO동/읍/면 → "OO시 OO점"   예) 인천시 병방동 → 인천시 병방점
         const _MAJOR_CITIES = {'광주':'광주시','부산':'부산시','대구':'대구시','인천':'인천시','대전':'대전시','울산':'울산시','세종':'세종시'};
+        // 「고양시」가 생략된 채 「일산서구」만 적힌 주소처럼, 자치구만으로도 상위 시를 복원한다.
+        const _GU_TO_CITY = {
+            '덕양구':'고양시','일산동구':'고양시','일산서구':'고양시',
+            '수정구':'성남시','중원구':'성남시','분당구':'성남시',
+            '장안구':'수원시','권선구':'수원시','팔달구':'수원시','영통구':'수원시',
+            '처인구':'용인시','기흥구':'용인시','수지구':'용인시',
+            '만안구':'안양시','동안구':'안양시',
+            '상록구':'안산시','단원구':'안산시',
+            '원미구':'부천시','소사구':'부천시','오정구':'부천시',
+            '완산구':'전주시','덕진구':'전주시',
+            '상당구':'청주시','서원구':'청주시','흥덕구':'청주시','청원구':'청주시',
+            '동남구':'천안시','서북구':'천안시',
+            '의창구':'창원시','성산구':'창원시','마산합포구':'창원시','마산회원구':'창원시','진해구':'창원시'
+        };
         function parseBranchFromAddress(addr) {
             if (!addr || !addr.trim()) return '';
             const s = addr.trim().replace(/\n/g,' ');
@@ -5762,11 +5781,46 @@
                 const siM = s.match(/([가-힣]+시)(?!\s*[가-힣]+시)/);
                 let top = siM ? siM[1] : '';
                 if(!top){ for(const[c,l] of Object.entries(_MAJOR_CITIES)){ if(s.startsWith(c)){top=l;break;} } }
+                if(!top){ const gu=s.match(/([가-힣]+구)/); if(gu && _GU_TO_CITY[gu[1]]) top=_GU_TO_CITY[gu[1]]; }
                 if(!top){ const gM=s.match(/([가-힣]+군)/); if(gM) top=gM[1]; }
                 return (top && sub) ? `${top} ${sub}점` : '';
             }
         }
         window.parseBranchFromAddress = parseBranchFromAddress;
+
+        // ── 도로명주소 → 지번주소 자동 변환 (카카오 Geocoder) ──
+        // 도로명주소만 입력하면 법정동이 없어 지점명이 산출되지 않으므로,
+        // 주소 입력 후 지점명이 비면 지번주소로 바꿔 채워준다.
+        const _SIDO_FIX = s => String(s)
+            .replace(/^전남광주통합특별시/,'광주시').replace(/^광주광역시/,'광주시')
+            .replace(/^세종특별자치시/,'세종시').replace(/^강원특별자치도/,'강원도')
+            .replace(/^전북특별자치도/,'전라북도').replace(/^제주특별자치도/,'제주도');
+        let _geocoder = null;
+        window.ensureGeocoder = function(){
+            return new Promise((res, rej)=>{
+                if(_geocoder) return res(_geocoder);
+                if(!window.kakao || !window.kakao.maps) return rej(new Error('카카오 SDK 없음'));
+                window.kakao.maps.load(()=>{
+                    try { _geocoder = new kakao.maps.services.Geocoder(); res(_geocoder); }
+                    catch(e){ rej(e); }
+                });
+            });
+        };
+        // 상세주소(층/호)는 지번주소 뒤에 그대로 유지한다
+        const _addrDetail = a => {
+            const m = String(a).match(/((?:지하\s*)?\d+\s*층[^,]*|[\dA-Za-z\-]+\s*호(?:\s*,\s*[\dA-Za-z\-]+\s*호)*)/g);
+            return m ? m.join(' ').replace(/\s+/g,' ').trim() : '';
+        };
+        window.toJibunAddress = async function(addr){
+            const a = String(addr||'').trim();
+            if(!a) return null;
+            const gc = await window.ensureGeocoder();
+            const base = await new Promise(r=>gc.addressSearch(a,(res,st)=>
+                r(st===kakao.maps.services.Status.OK && res[0] && res[0].address ? res[0].address.address_name : null)));
+            if(!base) return null;
+            const d = _addrDetail(a);
+            return _SIDO_FIX((base + (d ? ' ' + d : '')).trim());
+        };
 
         function updateBranchBadge() {
             const addr = document.getElementById('m-address')?.value || '';
@@ -5779,6 +5833,17 @@
                 wrap.classList.remove('hidden');
             } else {
                 wrap.classList.add('hidden');
+                // 도로명주소로 보이면 지번주소로 자동 변환 시도
+                if(addr.trim().length > 8 && addr !== window.__lastGeoTry){
+                    window.__lastGeoTry = addr;
+                    window.toJibunAddress(addr).then(jb=>{
+                        const el = document.getElementById('m-address');
+                        if(!jb || !el || el.value !== addr) return;
+                        el.value = jb;
+                        const b2 = parseBranchFromAddress(jb);
+                        if(b2){ badge.textContent = b2; wrap.classList.remove('hidden'); }
+                    }).catch(()=>{});
+                }
             }
         }
         window.updateBranchBadge = updateBranchBadge;
