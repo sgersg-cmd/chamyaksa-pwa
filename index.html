@@ -1847,6 +1847,10 @@
                 <label class="text-[10px] font-bold text-slate-400 uppercase mb-1.5 block">실제 종료일 <span class="text-slate-300 normal-case">· 월별 회원 변동 집계 기준</span></label>
                 <input type="date" id="archive-enddate-input" class="w-full border border-slate-200 rounded-lg p-2 text-xs">
                 <p class="text-[10px] text-slate-400 mt-1">폐업·양도양수·이전이 <b>실제로 일어난 날</b>을 입력하세요. 등록일이 아닙니다.</p>
+                <p class="text-[10px] text-slate-500 bg-slate-50 border rounded-lg p-2 mt-1.5 leading-relaxed">
+                    <b>「약국 이전」은 약국명이 그대로이고 소재지만 바뀐 경우</b>에만 선택하세요.<br>
+                    약국명이 바뀌었다면 기존 약국을 정리하고 새로 연 것이므로 <b>폐업</b> 또는 <b>양도양수</b>를 선택해야 운영 약국 수가 정확히 집계됩니다.
+                </p>
             </div>
             <!-- 기타 상세 입력 (기타 선택 시 표시) -->
             <div id="archive-etc-wrap" class="hidden px-5 pb-2">
@@ -3384,11 +3388,23 @@
         //
         //  '양도양수 및 약국 이전'처럼 종료와 이전이 섞인 건은 실제로 약국이 한 번
         //  없어졌다가 다시 생긴 것이므로, 종료(-1) + 재개설(+1)로 잡아야 순증감이 맞는다.
-        //  따라서 '순수 이전'만 이전으로 판정한다.
+        //  또한 약국명이 바뀌었다면 그것은 소재지 이동이 아니라 기존 약국을 폐업·양도한 뒤
+        //  새로 개설한 것이므로, 사유가 '약국 이전'으로 입력돼 있어도 이전으로 보지 않는다.
+        //  → 이전으로 인정하는 조건: 순수 이전 사유 AND 약국명 동일
         // ══════════════════════════════════════════════════════════
+        const _normPh = v => String(v||'')
+            .replace(/참약사/g,'').replace(/\([^)]*\)/g,'')
+            .replace(/[-–—].*$/,'').replace(/이전\s*전.*$/,'')
+            .replace(/\s/g,'').trim();
         window.isPureRelocation = function(reason){
             const s = String(reason||'');
             return s.includes('이전') && !s.includes('양도') && !s.includes('폐업') && !s.includes('탈퇴');
+        };
+        // 아카이브 → 승계 약국이 '소재지만 옮긴 동일 약국'인지 판정
+        window.isSamePharmacyMove = function(archiveRec, activeRec){
+            if(!window.isPureRelocation(archiveRec && archiveRec._archiveReason)) return false;
+            const a = _normPh(archiveRec.pharmacy), b = _normPh(activeRec && activeRec.pharmacy);
+            return !!a && a === b;
         };
         // 운영 중인 약국 = 활성 회원 중 실제로 약국을 운영하는 곳 (약국명 미정·약사회원 제외)
         window.isOperatingPharmacy = function(r){
@@ -3399,6 +3415,8 @@
         window.computeOperatingChange = function(){
             const all = window.memberList || [];
             const archById = {}; all.forEach(r=>{ if(r._deleted) archById[String(r.id)] = r; });
+            // 아카이브 → 승계한 활성 레코드 역참조 (약국명 비교용)
+            const succOf = {}; all.forEach(r=>{ if(!r._deleted && r.successorOf) succOf[String(r.successorOf)] = r; });
             const md = {};
             const g = m => (md[m] = md[m] || {vNew:0,vRe:0,vMove:0,vClose:0,vTrans:0,vQuit:0});
             let noEndDate = 0;
@@ -3406,7 +3424,8 @@
                 if(r._deleted){
                     if(r._archiveType !== 'archive') return;          // 삭제보관함 제외
                     const rs = String(r._archiveReason||'');
-                    if(window.isPureRelocation(rs)) return;           // 이전은 종료가 아님
+                    // 동일 약국이 소재지만 옮긴 건만 종료에서 제외
+                    if(window.isSamePharmacyMove(r, succOf[String(r.id)])) return;
                     if(!r.endDate){ noEndDate++; return; }
                     const m = String(r.endDate).slice(0,7); if(!m) return;
                     if(rs.includes('폐업')) g(m).vClose++;
@@ -3417,7 +3436,7 @@
                 const prev = r.successorOf ? archById[String(r.successorOf)] : null;
                 if(prev){
                     const m = String(r.openDate || r.date || '').slice(0,7); if(!m) return;
-                    if(window.isPureRelocation(prev._archiveReason)) g(m).vMove++; else g(m).vRe++;
+                    if(window.isSamePharmacyMove(prev, r)) g(m).vMove++; else g(m).vRe++;
                 } else {
                     const m = String(r.date||'').slice(0,7); if(m) g(m).vNew++;
                 }
