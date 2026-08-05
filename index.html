@@ -3406,16 +3406,25 @@
             const a = _normPh(archiveRec.pharmacy), b = _normPh(activeRec && activeRec.pharmacy);
             return !!a && a === b;
         };
-        // 운영 중인 약국 = 활성 회원 중 실제로 약국을 운영하는 곳 (약국명 미정·약사회원 제외)
-        window.isOperatingPharmacy = function(r){
+        // 운영 중인 약국 = 활성 회원 중 실제로 약국을 운영하는 곳
+        //  · 약국명 미정 / 약사회원(약국 없음) 제외
+        //  · 개국일이 미래인 곳(개국 예정)은 아직 운영 중이 아니므로 제외
+        //  · 개국일이 비어 있는 곳은 과거 데이터 결손이므로 운영 중으로 본다
+        window.isOperatingPharmacy = function(r, asOf){
             if(r._deleted) return false;
             const p = String(r.pharmacy||'').trim();
-            return !!p && !/^(약국명\s*미정|약사회원|미정)/.test(p);
+            if(!p || /^(약국명\s*미정|약사회원|미정)/.test(p)) return false;
+            const today = asOf || new Date().toISOString().slice(0,10);
+            if(r.openDate && String(r.openDate) > today) return false;
+            return true;
         };
+        // 약국이 문을 연 달 — 개국일이 원칙, 없으면 가입일로 대체
+        window.openMonthOf = r => String(r.openDate || r.date || '').slice(0,7);
         window.computeOperatingChange = function(){
             const all = window.memberList || [];
+            const today = new Date().toISOString().slice(0,10);
+            const curM = today.slice(0,7);
             const archById = {}; all.forEach(r=>{ if(r._deleted) archById[String(r.id)] = r; });
-            // 아카이브 → 승계한 활성 레코드 역참조 (약국명 비교용)
             const succOf = {}; all.forEach(r=>{ if(!r._deleted && r.successorOf) succOf[String(r.successorOf)] = r; });
             const md = {};
             const g = m => (md[m] = md[m] || {vNew:0,vRe:0,vMove:0,vClose:0,vTrans:0,vQuit:0});
@@ -3433,25 +3442,37 @@
                     else g(m).vQuit++;
                     return;
                 }
+                const p = String(r.pharmacy||'').trim();
+                if(!p || /^(약국명\s*미정|약사회원|미정)/.test(p)) return;  // 약국이 아직 없는 회원
+                const m = window.openMonthOf(r); if(!m) return;
                 const prev = r.successorOf ? archById[String(r.successorOf)] : null;
-                if(prev){
-                    const m = String(r.openDate || r.date || '').slice(0,7); if(!m) return;
-                    if(window.isSamePharmacyMove(prev, r)) g(m).vMove++; else g(m).vRe++;
-                } else {
-                    const m = String(r.date||'').slice(0,7); if(m) g(m).vNew++;
-                }
+                if(prev){ if(window.isSamePharmacyMove(prev, r)) g(m).vMove++; else g(m).vRe++; }
+                else g(m).vNew++;
             });
-            const openNow = all.filter(window.isOperatingPharmacy).length;
+            const openNow = all.filter(r=>window.isOperatingPharmacy(r)).length;
             const net = d => (d.vNew||0)+(d.vRe||0)-((d.vClose||0)+(d.vTrans||0)+(d.vQuit||0));
-            // 각 월의 '최종' 값을 현재 실측치에서 역산 → 마지막 월이 반드시 현재 수와 일치
-            const months = Object.keys(md).sort();
-            const startOf = {}, endOf = {};
-            let run = openNow;
-            for(let i=months.length-1; i>=0; i--){
-                const m = months[i];
-                endOf[m] = run; startOf[m] = run - net(md[m]); run = startOf[m];
+            // 이벤트가 없는 달도 빠지지 않도록 월 목록을 연속으로 채우고, 이번 달은 항상 포함
+            const keys = Object.keys(md).sort();
+            const months = [];
+            if(keys.length){
+                const last = keys[keys.length-1] > curM ? keys[keys.length-1] : curM;
+                let [y,mo] = keys[0].split('-').map(Number);
+                while(true){
+                    const k = y + '-' + String(mo).padStart(2,'0');
+                    months.push(k); g(k);
+                    if(k >= last) break;
+                    mo++; if(mo>12){ mo=1; y++; }
+                }
             }
-            return {md, months, startOf, endOf, net, openNow, noEndDate};
+            // '최종' 값은 이번 달 실측치를 기준점으로 앞뒤로 계산 → 이번 달 최종 = 현재 운영 약국 수
+            const startOf = {}, endOf = {};
+            const ci = months.indexOf(curM);
+            const anchor = ci >= 0 ? ci : months.length-1;
+            endOf[months[anchor]] = openNow;
+            startOf[months[anchor]] = openNow - net(md[months[anchor]]);
+            for(let i=anchor-1; i>=0; i--){ endOf[months[i]] = startOf[months[i+1]]; startOf[months[i]] = endOf[months[i]] - net(md[months[i]]); }
+            for(let i=anchor+1; i<months.length; i++){ startOf[months[i]] = endOf[months[i-1]]; endOf[months[i]] = startOf[months[i]] + net(md[months[i]]); }
+            return {md, months, startOf, endOf, net, openNow, noEndDate, curM};
         };
         window.renderOperatingChange = function(isMob, monthCount){
             const R = window.computeOperatingChange();
@@ -3467,6 +3488,7 @@
                 [nz(d.vMove),'text-slate-400'],[nz(d.vClose),'text-red-600'],[nz(d.vTrans),'text-orange-600'],
                 [nz(d.vQuit),'text-amber-600'],[nt(R.net(d)),R.net(d)>=0?'text-blue-700':'text-red-700'],
                 [R.endOf[m]+'','text-slate-900']]; };
+            const label = m => m.slice(2) + (m > R.curM ? ' <span class="text-[9px] text-indigo-500 font-normal">예정</span>' : '');
             const sum = k => sM.reduce((s,m)=>s+(R.md[m][k]||0),0);
             const sumNet = sM.reduce((s,m)=>s+R.net(R.md[m]),0);
             let body;
@@ -3474,7 +3496,7 @@
                 body = `<div class="space-y-2">${sM.map(m=>`
                     <div class="bg-slate-50 rounded-xl border overflow-hidden">
                         <div class="bg-emerald-50 px-3 py-2 border-b flex justify-between items-center">
-                            <span class="text-sm font-black text-emerald-700">${m.slice(2)}</span>
+                            <span class="text-sm font-black text-emerald-700">${label(m)}</span>
                             <span class="text-[11px] font-bold text-slate-500">${R.startOf[m]}곳 → <b class="text-slate-900">${R.endOf[m]}곳</b></span>
                         </div>
                         <div class="p-3 grid grid-cols-1 gap-y-1.5 text-xs divide-y divide-slate-100">
@@ -3488,7 +3510,7 @@
                         <th class="${th} text-left">월</th>${HEAD.map(h=>`<th class="${th} ${h[1]}">${h[0]}</th>`).join('')}
                     </tr></thead>
                     <tbody class="divide-y">
-                    ${sM.map(m=>`<tr class="hover:bg-slate-50"><td class="${td} text-left font-bold">${m.slice(2)}</td>${row(m).map(c=>`<td class="${td} font-bold ${c[1]}">${c[0]}</td>`).join('')}</tr>`).join('')}
+                    ${sM.map(m=>`<tr class="hover:bg-slate-50"><td class="${td} text-left font-bold">${label(m)}</td>${row(m).map(c=>`<td class="${td} font-bold ${c[1]}">${c[0]}</td>`).join('')}</tr>`).join('')}
                     <tr class="bg-blue-50 border-t-2 border-blue-200 font-black">
                         <td class="${td} text-left text-blue-800">합계</td>
                         <td class="${td} text-slate-600">${R.startOf[sM[0]]}</td>
@@ -3504,9 +3526,44 @@
             }
             return `<div class="mt-4"><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-right-left text-emerald-600 mr-1"></i>월별 운영 약국 변동 <span class="text-[10px] text-slate-400 font-normal">(현재 ${R.openNow}곳)</span></p>
                 ${body}
-                <p class="text-[9px] text-slate-400 mt-1.5">※ 운영 약국 = 활성 회원 중 실제 약국을 운영 중인 곳 (약국명 미정·약사회원 제외).<br>※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 운영 약국 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 재개설·이전은 새 약국 개국일, 종료는 실제 종료일 기준입니다.</p>
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 운영 약국 = 활성 회원 중 실제 약국을 운영 중인 곳 (약국명 미정·약사회원 제외).<br>※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 운영 약국 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 개설·재개설·이전은 <b>개국일</b>, 종료는 <b>실제 종료일</b> 기준입니다. 개국일이 비어 있으면 가입일로 대체됩니다.<br>※ 개국 예정일이 미래인 곳은 「예정」으로 표시되며 현재 운영 약국 수에는 포함되지 않습니다.</p>
                 ${R.noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${R.noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
             </div>`;
+        };
+
+        // ══════════════════════════════════════════════════════════
+        //  지점명 (branch) — 가입자관리 확장, 2026-08-05
+        //  산출 규칙은 가맹상담에서 쓰던 parseBranchFromAddress()를 그대로 재사용한다.
+        //  (지번주소·도로명 괄호 행정동 모두 처리, 산출 불가 시 빈값 → 오산 방지)
+        // ══════════════════════════════════════════════════════════
+        // 약국명 + 지점명 표시용
+        window.pharmacyLabel = function(r){
+            const p = String(r.pharmacy||'').trim();
+            const b = String(r.branch||'').trim() || (window.parseBranchFromAddress ? window.parseBranchFromAddress(r.address||'') : '');
+            return b ? `${p} (${b})` : p;
+        };
+        window.hasPharmacy = function(r){
+            const p = String(r.pharmacy||'').trim();
+            return !!p && !/^(약국명\s*미정|약사회원|미정)/.test(p);
+        };
+        // 지점명 일괄 자동 채우기 — 비어 있는 곳만
+        window.autoFillBranches = async function(dryRun){
+            const list = (window.memberList||[]).filter(r=>!r._deleted && !String(r.branch||'').trim() && window.hasPharmacy(r));
+            const made = [], failed = [];
+            list.forEach(r=>{
+                const b = window.parseBranchFromAddress ? window.parseBranchFromAddress(r.address||'') : '';
+                if(b) made.push({r, b}); else failed.push(r);
+            });
+            if(dryRun){
+                return {생성가능: made.length, 수동필요: failed.length,
+                    미리보기: made.slice(0,20).map(x=>x.r.pharmacy+' ('+x.b+')'),
+                    수동목록: failed.map(x=>x.pharmacy+' | '+(x.address||'주소 없음'))};
+            }
+            made.forEach(x=>{ x.r.branch = x.b; });
+            await window.saveMembers();
+            window.renderMembers && window.renderMembers();
+            return {적용: made.length, 수동필요: failed.length,
+                수동목록: failed.map(x=>x.pharmacy+' | '+(x.address||'주소 없음'))};
         };
 
         function showMemberDashboard() {
