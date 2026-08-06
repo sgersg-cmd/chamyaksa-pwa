@@ -72,6 +72,11 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.7.0  ① 가맹상담도 바이트 기준 동적 분할 (consults_2~5 자동 확장)
+                 ② 전체 스냅샷 백업/복원 버튼 — CSV 백업과 달리 원형 복원 가능.
+                    마지막 백업 후 30일 경과 시 로그인 안내
+                 ③ 감사추적 — 저장 시 변경된 레코드에 _mBy(수정자)·_mAt(시각) 기록
+                 ④ 뉴본/리본에 「판정 불가」 추가 (분류 기준 이전 가입 약국)
          14.6.0  회원 저장 구조 개편 — 건수 고정(300건) 분할을 바이트 기준 동적 분할로 교체.
                  청크 문서 자동 확장(members_2~5), writeBatch 원자적 저장으로 부분 저장 방지.
                  window.checkMemberCapacity() 로 문서 사용량 상시 점검 가능.
@@ -109,7 +114,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.6.0';</script>
+    <script>window.APP_VERSION = '14.7.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -314,7 +319,23 @@
             window.consultList=window.consultList||[];
             window.memberList=window.memberList||[];
             window.interiorList=window.interiorList||[];
-            onSnapshot(doc(db,'chamyaksa','consults'),s=>{if(s.exists())window.consultList=s.data().list||[];if(typeof window.renderConsults==='function')window.renderConsults();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
+            // ── consults: 바이트 기준 동적 분할 (members와 동일 방식) ──
+            const CONSULT_CHUNK_DOCS = ['consults','consults_2','consults_3','consults_4','consults_5'];
+            window._consultChunks = CONSULT_CHUNK_DOCS.map(() => []);
+            function _mergeConsultLists() {
+                window.consultList = window._consultChunks.reduce((a,c) => a.concat(c||[]), []);
+                if (!window._auditBaseSetC && window.consultList.length) {
+                    window._auditBaseSetC = true; window._initAuditBaseline(window.consultList);
+                }
+                if (typeof window.renderConsults === 'function') window.renderConsults();
+                if (window.scheduleDashboardRefresh) window.scheduleDashboardRefresh();
+            }
+            CONSULT_CHUNK_DOCS.forEach((docId, ci) => {
+                onSnapshot(doc(db,'chamyaksa',docId), s => {
+                    window._consultChunks[ci] = s.exists() ? (s.data().list||[]) : [];
+                    _mergeConsultLists();
+                });
+            });
             // ── members: 바이트 기준 동적 분할 (각 문서 1MB 이하 유지) ──
             //  · 활성 회원을 앞에서부터 순차로 담고, 한 청크가 상한(85%)에 닿으면 다음 청크로 넘긴다.
             //  · 신규 회원은 목록 맨 앞(unshift)에 들어오므로 뒤쪽 청크가 완충 역할을 한다.
@@ -337,6 +358,9 @@
                 window._activeMembers2 = window._memberChunks[1] || [];
                 window._membersLoaded  = window._memberChunksLoaded[0];
                 window._members2Loaded = window._memberChunksLoaded[1];
+                if (!window._auditBaseSetM && window._memberChunksLoaded.every(Boolean) && window._archiveLoaded) {
+                    window._auditBaseSetM = true; window._initAuditBaseline(window.memberList);
+                }
                 if (!window._memberUploading && typeof window.renderMembers === 'function') window.renderMembers();
                 if (window.scheduleDashboardRefresh) window.scheduleDashboardRefresh();
             }
@@ -357,20 +381,67 @@
             onSnapshot(doc(db,'chamyaksa','interiors'),s=>{if(s.exists())window.interiorList=s.data().list||[];if(typeof window.renderInteriors==='function')window.renderInteriors();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
             onSnapshot(doc(db,'chamyaksa','pos'),s=>{if(s.exists())window.posList=s.data().list||[];window._posListLoaded=true;if(typeof window.runPosUnitMigration==='function')window.runPosUnitMigration();if(typeof window.renderPos==='function')window.renderPos();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
             onSnapshot(doc(db,'chamyaksa','posMonthly'),s=>{window.posMonthlyLedger=s.exists()?(s.data().ledger||{}):{};window._posLedgerLoaded=true;if(typeof window.runPosUnitMigration==='function')window.runPosUnitMigration();if(typeof window.renderPosMonthly==='function')window.renderPosMonthly();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
-            window.saveConsults=async()=>{try{await setDoc(doc(db,'chamyaksa','consults'),{list:window.consultList||[]});}catch(e){console.error(e);alert('❌ 상담 저장 실패\n'+e.code+': '+e.message);throw e;}};
-            // 활성 회원 목록을 바이트 기준으로 순차 분할한다. (순서 보존)
-            window._packMemberChunks = function(active) {
+            window.saveConsults=async()=>{
+                try {
+                    const list   = window.consultList || [];
+                    const chunks = window._packByBytes(list);
+                    if (chunks.length > CONSULT_CHUNK_DOCS.length) {
+                        throw new Error('상담 데이터가 청크 문서 ' + CONSULT_CHUNK_DOCS.length +
+                                        '개를 초과했습니다. CONSULT_CHUNK_DOCS 배열에 문서를 추가하세요.');
+                    }
+                    const batch = writeBatch(db);
+                    window._stampAudit(list);
+                    for (let k = 0; k < CONSULT_CHUNK_DOCS.length; k++) {
+                        const part = chunks[k] || [];
+                        if (!part.length && !(window._consultChunks[k] || []).length) continue;
+                        batch.set(doc(db,'chamyaksa',CONSULT_CHUNK_DOCS[k]), {list: part});
+                    }
+                    await batch.commit();
+                    console.log('[저장완료] 상담', list.length, '→', chunks.map(c=>c.length).join(' + '));
+                } catch(e) {
+                    console.error(e);
+                    alert('❌ 상담 저장 실패\n' + (e.code||'') + ': ' + e.message);
+                    throw e;
+                }
+            };
+            // 목록을 바이트 기준으로 순차 분할한다. (순서 보존 · members/consults 공용)
+            window._packByBytes = function(list) {
                 const enc = new TextEncoder();
                 const cap = MEMBER_DOC_LIMIT * MEMBER_FILL_RATIO;
                 const chunks = [];
                 let cur = [], curBytes = 12;           // {"list":[]} 래퍼 여유
-                for (const r of active) {
+                for (const r of (list || [])) {
                     const b = enc.encode(JSON.stringify(r)).length + 1;   // +1 = 구분자
                     if (cur.length && curBytes + b > cap) { chunks.push(cur); cur = []; curBytes = 12; }
                     cur.push(r); curBytes += b;
                 }
                 if (cur.length) chunks.push(cur);
                 return chunks;
+            };
+            window._packMemberChunks = window._packByBytes;   // 하위 호환 별칭
+
+            /* 감사추적 — 저장 시 "누가·언제" 를 각 레코드에 남긴다.
+               직전 저장 이후 실제로 바뀐 레코드에만 기록해 불필요한 갱신을 피한다.
+               _mBy(수정자) / _mAt(수정시각 ISO) 두 필드만 사용한다. */
+            window._auditSnapshot = new Map();
+            window._stampAudit = function(list) {
+                const who = (window._auth && window._auth.currentUser && window._auth.currentUser.email) || 'unknown';
+                const now = new Date().toISOString();
+                (list || []).forEach(r => {
+                    if (!r || !r.id) return;
+                    const copy = Object.assign({}, r); delete copy._mBy; delete copy._mAt;
+                    const sig = JSON.stringify(copy);
+                    const prev = window._auditSnapshot.get(r.id);
+                    if (prev !== sig) { r._mBy = who; r._mAt = now; window._auditSnapshot.set(r.id, sig); }
+                });
+            };
+            // 최초 로드 시점의 상태를 기준선으로 잡는다 (전체가 수정된 것으로 찍히지 않도록)
+            window._initAuditBaseline = function(list) {
+                (list || []).forEach(r => {
+                    if (!r || !r.id) return;
+                    const copy = Object.assign({}, r); delete copy._mBy; delete copy._mAt;
+                    window._auditSnapshot.set(r.id, JSON.stringify(copy));
+                });
             };
             // 현재 사용량을 점검한다. 콘솔에서 window.checkMemberCapacity() 로 호출.
             window.checkMemberCapacity = function() {
@@ -385,8 +456,14 @@
                 const arch = enc.encode(JSON.stringify({list: all.filter(r=>r._deleted)})).length;
                 rows.push({ 문서:'members_archive', 건수: all.filter(r=>r._deleted).length,
                             크기:(arch/1024).toFixed(1)+' KB', 한계대비:(arch/MEMBER_DOC_LIMIT*100).toFixed(1)+'%' });
+                const cchunks = window._packByBytes(window.consultList || []);
+                cchunks.forEach((c,i)=>{
+                    const b = enc.encode(JSON.stringify({list:c})).length;
+                    rows.push({ 문서: CONSULT_CHUNK_DOCS[i] || '(초과)', 건수: c.length,
+                                크기:(b/1024).toFixed(1)+' KB', 한계대비:(b/MEMBER_DOC_LIMIT*100).toFixed(1)+'%' });
+                });
                 console.table(rows);
-                console.log(`청크 사용 ${chunks.length} / ${MEMBER_CHUNK_DOCS.length}`);
+                console.log(`회원 청크 ${chunks.length}/${MEMBER_CHUNK_DOCS.length} · 상담 청크 ${cchunks.length}/${CONSULT_CHUNK_DOCS.length}`);
                 return rows;
             };
             window.saveMembers=async()=>{
@@ -402,6 +479,7 @@
                     }
                     // 전체를 하나의 배치로 커밋 → 일부만 저장되는 상태가 생기지 않는다
                     const batch = writeBatch(db);
+                    window._stampAudit(active);
                     for (let i = 0; i < MEMBER_CHUNK_DOCS.length; i++) {
                         const list = chunks[i] || [];
                         // 이미 비어 있고 이번에도 비었다면 불필요한 쓰기를 생략
@@ -420,6 +498,144 @@
             };
             window.saveInteriors=async()=>{try{await setDoc(doc(db,'chamyaksa','interiors'),{list:window.interiorList||[]});}catch(e){console.error(e);alert('❌ 매출관리 저장 실패\n'+e.code+': '+e.message);throw e;}};
             window.savePosList=async()=>{try{await setDoc(doc(db,'chamyaksa','pos'),{list:window.posList||[]});}catch(e){console.error('POS 저장 오류',e);const _t=document.createElement('div');_t.textContent='⚠️ POS 저장 실패 (Firestore 권한 확인 필요)';_t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#ef4444;color:white;padding:10px 18px;border-radius:10px;font-size:12px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.2)';document.body.appendChild(_t);setTimeout(()=>_t.remove(),4000);}};
+            /* ═══════════════════════════════════════════════════════════
+               v14.7.0  전체 스냅샷 백업 / 복원
+               · 기존 「○○ 백업」 버튼은 CSV(조회·엑셀 편집용)이며 복원이 불가능하다.
+               · 여기서는 전 문서를 원형 그대로 JSON으로 받고, 같은 파일로 되돌린다.
+               · 브라우저는 꺼져 있으면 실행되지 않으므로 완전 자동화는 불가.
+                 대신 마지막 백업 후 30일이 지나면 로그인 시 안내를 띄운다.
+               ═══════════════════════════════════════════════════════════ */
+            const BACKUP_DOCS = [
+                'master','timeline',
+                'consults','consults_2','consults_3','consults_4','consults_5',
+                'members','members_2','members_3','members_4','members_5','members_archive',
+                'interiors','pos','posMonthly','links','posUnitMigration'
+            ];
+            const BACKUP_INTERVAL_DAYS = 30;
+
+            window.downloadFullBackup = async function(silent) {
+                const btn = document.getElementById('btn-full-backup');
+                if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> 백업 중…'; }
+                try {
+                    const bundle = { _meta: {
+                        savedAt: new Date().toISOString(),
+                        savedAtLocal: new Date().toLocaleString('ko-KR'),
+                        appVersion: window.APP_VERSION || '',
+                        user: (window._auth && window._auth.currentUser && window._auth.currentUser.email) || '',
+                        source: location.href
+                    }, docs: {} };
+                    const summary = [];
+                    for (const id of BACKUP_DOCS) {
+                        const snap = await getDoc(doc(db,'chamyaksa',id));
+                        if (!snap.exists()) continue;
+                        const data = snap.data();
+                        bundle.docs[id] = data;
+                        let n = '-';
+                        for (const v of Object.values(data)) {
+                            if (Array.isArray(v)) { n = v.length; break; }
+                            if (v && typeof v === 'object') { n = Object.keys(v).length; break; }
+                        }
+                        summary.push(id + ' ' + n);
+                    }
+                    if (!Object.keys(bundle.docs).length) throw new Error('읽어온 문서가 없습니다.');
+
+                    const json = JSON.stringify(bundle);
+                    const d = new Date(), p2 = n => String(n).padStart(2,'0');
+                    const fn = '참메이트_백업_' + d.getFullYear() + p2(d.getMonth()+1) + p2(d.getDate())
+                             + '_' + p2(d.getHours()) + p2(d.getMinutes()) + '.json';
+                    const url = URL.createObjectURL(new Blob([json], {type:'application/json'}));
+                    const a = document.createElement('a');
+                    a.href = url; a.download = fn; document.body.appendChild(a); a.click(); a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 15000);
+
+                    try { localStorage.setItem('chammate_last_backup', String(Date.now())); } catch(e) {}
+                    console.log('[백업]', fn, summary.join(' · '));
+                    if (!silent) alert('✅ 백업 완료\n\n파일: ' + fn + '\n크기: ' + (json.length/1048576).toFixed(2) + ' MB\n문서: ' + Object.keys(bundle.docs).length + '개\n\n다운로드 폴더를 확인하세요.');
+                    return fn;
+                } catch(e) {
+                    console.error(e);
+                    alert('❌ 백업 실패\n' + (e.code||'') + ': ' + e.message + '\n\n복구 수단이 없는 상태이므로 반드시 다시 시도하세요.');
+                } finally {
+                    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-download mr-1"></i> 전체 백업'; }
+                }
+            };
+
+            window.restoreFullBackup = function() {
+                const inp = document.createElement('input');
+                inp.type = 'file'; inp.accept = '.json';
+                inp.onchange = async () => {
+                    const file = inp.files && inp.files[0];
+                    if (!file) return;
+                    let bundle;
+                    try { bundle = JSON.parse(await file.text()); }
+                    catch(e) { alert('❌ 파일을 읽을 수 없습니다. 참메이트 백업 JSON이 맞는지 확인하세요.'); return; }
+                    if (!bundle || !bundle.docs || !bundle._meta) { alert('❌ 참메이트 백업 파일 형식이 아닙니다.'); return; }
+
+                    const ids = Object.keys(bundle.docs);
+                    const lines = ids.map(id => {
+                        const d = bundle.docs[id]; let n = '-';
+                        for (const v of Object.values(d)) {
+                            if (Array.isArray(v)) { n = v.length; break; }
+                            if (v && typeof v === 'object') { n = Object.keys(v).length; break; }
+                        }
+                        return '  · ' + id + ' : ' + n;
+                    }).join('\n');
+
+                    if (!confirm('⚠ 복원하면 현재 데이터가 사라집니다.\n\n[백업 시각] ' + (bundle._meta.savedAtLocal||'?')
+                        + '\n[작성 계정] ' + (bundle._meta.user||'?') + '\n[버전] v' + (bundle._meta.appVersion||'?')
+                        + '\n\n복원할 문서\n' + lines + '\n\n계속할까요?')) return;
+
+                    // ① 복원 직전 상태를 먼저 내려받는다 (복원 자체를 되돌리기 위함)
+                    alert('먼저 현재 상태를 백업 파일로 내려받습니다.\n다운로드가 끝나면 복원이 이어집니다.');
+                    await window.downloadFullBackup(true);
+
+                    // ② 확인 문구 입력
+                    const PHRASE = '복원';
+                    if (prompt('마지막 확인입니다.\n계속하려면 "' + PHRASE + '" 을 입력하세요.') !== PHRASE) {
+                        alert('복원을 취소했습니다.'); return;
+                    }
+
+                    // ③ 배치 커밋 (전부 적용되거나 전부 적용되지 않음)
+                    try {
+                        const batch = writeBatch(db);
+                        ids.forEach(id => batch.set(doc(db,'chamyaksa',id), bundle.docs[id]));
+                        await batch.commit();
+                        alert('✅ 복원 완료\n\n페이지를 새로고침합니다.');
+                        location.reload();
+                    } catch(e) {
+                        console.error(e);
+                        alert('❌ 복원 실패\n' + (e.code||'') + ': ' + e.message + '\n\n데이터는 변경되지 않았습니다.');
+                    }
+                };
+                inp.click();
+            };
+
+            // 마지막 백업 후 30일 경과 시 1회 안내
+            window.checkBackupReminder = function() {
+                try {
+                    const last = parseInt(localStorage.getItem('chammate_last_backup') || '0', 10);
+                    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+                    const badge = document.getElementById('backup-age-badge');
+                    if (badge) {
+                        badge.textContent = last ? (days + '일 전') : '기록 없음';
+                        badge.className = 'text-[9px] font-bold ' +
+                            (!last || days >= BACKUP_INTERVAL_DAYS ? 'text-amber-300' : 'text-slate-400');
+                    }
+                    if (!last || days >= BACKUP_INTERVAL_DAYS) {
+                        const shown = localStorage.getItem('chammate_backup_notice_at');
+                        if (!shown || (Date.now() - parseInt(shown,10)) > 86400000) {
+                            localStorage.setItem('chammate_backup_notice_at', String(Date.now()));
+                            setTimeout(() => {
+                                if (confirm((last ? '마지막 백업이 ' + days + '일 전입니다.' : '전체 백업 기록이 없습니다.')
+                                    + '\n\n지금 백업을 받으시겠습니까?\n(문제가 생겼을 때 되돌릴 수 있는 유일한 수단입니다)')) {
+                                    window.downloadFullBackup();
+                                }
+                            }, 2500);
+                        }
+                    }
+                } catch(e) {}
+            };
+
             window.savePosMonthlyLedger=async()=>{try{await setDoc(doc(db,'chamyaksa','posMonthly'),{ledger:window.posMonthlyLedger||{}});}catch(e){console.error('POS 월별 정산 저장 오류',e);}};
 
             // ── [1회성] 참포스 금액 단위 천원→만원 통일 마이그레이션 ──
@@ -486,6 +702,8 @@
                 const uel=document.getElementById('admin-user-email');
                 if(uel)uel.textContent=user.email;
                 startListeners();
+                // 마지막 전체 백업 후 30일 경과 시 안내 (하루 1회)
+                setTimeout(()=>{ if(typeof window.checkBackupReminder==='function') window.checkBackupReminder(); }, 4000);
             } else {
                 // 로그인 필요
                 const ls=document.getElementById('login-screen');
@@ -933,7 +1151,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.6.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -947,6 +1165,18 @@
                 <button onclick="showIntegratedDashboard()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg shadow-sm">
                     <i class="fa-solid fa-chart-pie mr-1"></i> 통합 대시보드
                 </button>
+                <!-- 전체 스냅샷 백업 (CSV 백업과 달리 복원 가능) -->
+                <div class="flex items-center gap-1">
+                    <button id="btn-full-backup" onclick="downloadFullBackup()" title="전 데이터를 원형 그대로 JSON으로 내려받습니다. 복원 가능한 유일한 백업입니다."
+                            class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg shadow-sm">
+                        <i class="fa-solid fa-download mr-1"></i> 전체 백업
+                    </button>
+                    <button onclick="restoreFullBackup()" title="백업 파일로 되돌립니다. 현재 데이터가 사라지므로 주의하세요."
+                            class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold px-2 py-2.5 rounded-lg">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </button>
+                    <span id="backup-age-badge" class="text-[9px] text-slate-400 font-bold ml-0.5"></span>
+                </div>
             </div>
         </div>
         <!-- 통합 탭 내비게이션 (관리자만 표시) -->
@@ -1823,6 +2053,7 @@
                         <option value="">선택</option>
                         <option value="뉴본">뉴본 (신규 개국)</option>
                         <option value="리본">리본 (기존 약국)</option>
+                        <option value="판정불가">판정 불가 (분류 기준 이전 가입)</option>
                         <option value="양도양수">양도양수</option>
                         <option value="미정">미정</option>
                     </select>
@@ -2051,6 +2282,7 @@
                     <select id="m-newborn" class="w-full border rounded-lg p-2.5 bg-white">
                         <option value="">선택</option><option value="뉴본">뉴본 (신규 개국)</option>
                         <option value="리본">리본 (기존 약국)</option><option value="양도양수">양도양수</option>
+                        <option value="판정불가">판정 불가 (분류 기준 이전 가입)</option>
                     </select>
                 </div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">회원등급</label>
@@ -4105,7 +4337,7 @@
             <div id="dash-section-0">
                 <div class="grid grid-cols-2 gap-2 mb-3">
                     <div class="bg-blue-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-blue-400 font-bold">총 상담</p><p class="text-2xl font-black text-blue-700">${consults.length}</p><p class="text-[10px] text-slate-400">진행중 ${consultInProgress.length} · 전환 ${pct(c2m_n,c2m_d)}%</p></div>
-                    <div class="bg-emerald-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-emerald-500 font-bold">총 가입자</p><p class="text-2xl font-black text-emerald-700">${members.length}</p><p class="text-[10px] text-slate-400">뉴본 ${nbCnt} · 리본 ${rbCnt} · 기타 ${members.length-nbCnt-rbCnt}</p></div>
+                    <div class="bg-emerald-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-emerald-500 font-bold">총 가입자</p><p class="text-2xl font-black text-emerald-700">${members.length}</p><p class="text-[10px] text-slate-400">뉴본 ${nbCnt} · 리본 ${rbCnt} · 판정불가/기타 ${members.length-nbCnt-rbCnt}</p></div>
                     <div class="bg-amber-50 rounded-xl p-3 border text-center"><p class="text-[10px] text-amber-500 font-bold">개설행정</p><p class="text-2xl font-black text-amber-600">${aT}</p><p class="text-[10px] text-slate-400">진행중 ${aA} · 완료 ${aC}</p></div>
                     <div class="bg-purple-50 rounded-xl p-3 border text-center"><p class="text-[9px] text-purple-400 font-bold">인익스테리어</p><p class="text-2xl font-black text-purple-700">${intTotal}</p><p class="text-[9px] text-slate-400">진행 ${intActive} · 완료 ${intComplete} · 미진행 ${intDrop}</p></div>
                 </div>
