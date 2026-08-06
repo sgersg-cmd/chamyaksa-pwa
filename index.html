@@ -55,6 +55,58 @@
     })();
     </script>
 
+    <!-- ══════════════════════════════════════════════════════════════════
+         참메이트 통합관리 시스템 (CharmMate)
+         개발: 감병주 (약국총괄사업부 가맹기획팀)  ·  최초 개발 2026-05-26
+
+         [ 버전 관리 규칙 ]  MAJOR . MINOR . PATCH   (예: 14.5.0)
+           MAJOR : 서비스 구조가 크게 바뀔 때 (탭 신설·개편, 데이터 모델 전환 등)
+           MINOR : 새 기능 추가
+           PATCH : 오류 수정 · 문구 변경 등 작은 개선
+         ※ 코드 변경 시 아래 APP_VERSION 을 반드시 함께 올리고 변경 이력을 남길 것.
+         ※ 배포 시 sw.js 의 캐시 버전도 함께 올려야 사용자에게 즉시 반영됨.
+
+         ┌─────────────────────────────────────────────────────────────┐
+         │ 변경 이력                                                    │
+         │ 14.x 이전 버전은 2자리 표기였으며, X.Y → X.Y.0 으로 정규화함  │
+         └─────────────────────────────────────────────────────────────┘
+
+         ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.5.0  개설행정 「개국 완료」 체크 시 개국일 자동 확정 + 가입자관리 연동
+         14.4.0  지점명 자동화 — 카카오 Geocoder 도로명→지번 변환, 자치구→시 매핑 보완
+         14.3.0  월별 운영 약국 변동 집계 (통합 대시보드 · 가입자관리 대시보드)
+         14.2.0  실제 종료일(endDate) 도입, 「약국 이전」 사유 추가, 종료일 미상 구분
+         14.1.0  이전 약국 이력 양방향 탐색 (돌아가기 / 현재 기록 보기)
+         14.0.1  홈 화면 추가 시 약사 링크(?id=) 유실 복구, 설치 팝업 노출 시점 수정
+         14.0.0  읽기 전용 보기 모달 4개 탭 확대(행 클릭·네이버지도·전화 연결),
+                 승계(재개설) 이력 연결 구조 도입                          [MAJOR]
+
+         ── 13.x  대시보드 고도화 · 데이터 정제 ───────────────────────
+         13.8.0  매출관리 연동 힌트(불일치 감지·가져오기), 일괄 동기화
+         13.7.0  개국 기념일 명단(엑셀 다운로드), 미수금·실마진 지표,
+                 통합 대시보드 월별 재무현황 재구성
+         13.6.0  검색 디바운스(5개 탭), 집계 순회 7회→1회, 모바일 카드뷰 개선
+         13.3.0  대시보드 자동 갱신 — 디바운싱, 스크롤 위치 유지, 입력 중 보호
+         13.0.0  memberId 연결키 인프라 — findMemberId() 스코어링,
+                 propagateMemberInfo / propagateOpenDate 단일 소스 전파   [MAJOR]
+
+         ── 12.x 이하  기반 구축 ─────────────────────────────────────
+         12.4.0  전환율 로직 분리(가맹상담→가입자는 전체기간 / 그 외 2026+),
+                 fmtAmt 억 단위 표기, 완료보기 분리
+         12.0.0  개설행정 데이터 이관(50건) 및 타임라인 일괄 완료 처리     [MAJOR]
+         11.0.0  타임라인 ID 숫자형 전환 — parseInt(k) 문자열 키 누락 해소  [MAJOR]
+         10.0.0  전 탭 월별 필터, 3단계 정렬 토글, 모달 스크롤·ESC 대응     [MAJOR]
+          9.6.0  아카이브 사유 「기타」 상세 입력, 가입결정이유 분류
+          9.5.0  아카이브 사유 체계 정비
+          8.9.0  삭제보관함 모바일 대응, 양도양수 step 보완, 캘린더 정렬 고정
+          8.5.0  통합 대시보드 2탭 구조(종합 현황 / 재무 분석),
+                 페이지네이션(50건), 모바일 카드뷰 / PC 테이블 분기
+          8.0.0  참포스 탭 신설 — V2.0 올댓페이 / V1.0 크레소티 구분      [MAJOR]
+          7.7.0  월간회의 시연 버전 (2026-06-09)
+          1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
+                 개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
+    ══════════════════════════════════════════════════════════════════ -->
+    <script>window.APP_VERSION = '14.5.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -374,7 +426,7 @@
                 document.getElementById('login-screen')?.remove();
                 window._loginDone = true;
                 window.dispatchEvent(new Event('chammate:login'));
-                document.title = '참메이트 통합관리 시스템 v14.0';
+                document.title = '참메이트 통합관리 시스템 v' + (window.APP_VERSION||'');
                 hideSplash();
                 const uel=document.getElementById('admin-user-email');
                 if(uel)uel.textContent=user.email;
@@ -826,7 +878,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">v14.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.5.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
