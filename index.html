@@ -117,7 +117,7 @@
     <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, increment, serverTimestamp, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, increment, serverTimestamp, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
         const app = initializeApp({
@@ -312,29 +312,38 @@
             window.memberList=window.memberList||[];
             window.interiorList=window.interiorList||[];
             onSnapshot(doc(db,'chamyaksa','consults'),s=>{if(s.exists())window.consultList=s.data().list||[];if(typeof window.renderConsults==='function')window.renderConsults();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
-            // ── members: 활성 2분할 + 아카이브 분리 (각 문서 1MB 이하 유지) ──
-            window._activeMembers=[]; window._activeMembers2=[]; window._archiveMembers=[];
-            window._membersLoaded=false; window._members2Loaded=false; window._archiveLoaded=false;
+            // ── members: 바이트 기준 동적 분할 (각 문서 1MB 이하 유지) ──
+            //  · 활성 회원을 앞에서부터 순차로 담고, 한 청크가 상한(85%)에 닿으면 다음 청크로 넘긴다.
+            //  · 신규 회원은 목록 맨 앞(unshift)에 들어오므로 뒤쪽 청크가 완충 역할을 한다.
+            //  · 청크 수는 MEMBER_CHUNK_DOCS 범위 안에서 자동으로 늘거나 줄어든다.
+            //  · 건수 고정(구 300건) 방식은 한쪽 청크만 비대해져 저장 실패를 유발하므로 폐기.
+            const MEMBER_CHUNK_DOCS  = ['members','members_2','members_3','members_4','members_5'];
+            const MEMBER_DOC_LIMIT   = 1048576;  // Firestore 1문서 한계(1MiB)
+            const MEMBER_FILL_RATIO  = 0.85;     // 필드명·인덱스 오버헤드 대비 안전 상한
+            window._memberChunks       = MEMBER_CHUNK_DOCS.map(() => []);
+            window._memberChunksLoaded = MEMBER_CHUNK_DOCS.map(() => false);
+            window._archiveMembers = [];
+            window._archiveLoaded  = false;
             function _mergeMemberLists() {
                 window.memberList = [
-                    ...(window._activeMembers||[]),
-                    ...(window._activeMembers2||[]),
-                    ...(window._archiveMembers||[])
+                    ...window._memberChunks.reduce((a, c) => a.concat(c || []), []),
+                    ...(window._archiveMembers || [])
                 ];
+                // 하위 호환 별칭 (기존 코드가 참조할 수 있음)
+                window._activeMembers  = window._memberChunks[0] || [];
+                window._activeMembers2 = window._memberChunks[1] || [];
+                window._membersLoaded  = window._memberChunksLoaded[0];
+                window._members2Loaded = window._memberChunksLoaded[1];
                 if (!window._memberUploading && typeof window.renderMembers === 'function') window.renderMembers();
                 if (window.scheduleDashboardRefresh) window.scheduleDashboardRefresh();
             }
-            onSnapshot(doc(db,'chamyaksa','members'), s => {
-                if (window._memberUploading) return;
-                window._activeMembers = s.exists() ? (s.data().list||[]) : [];
-                window._membersLoaded = true;
-                _mergeMemberLists();
-            });
-            onSnapshot(doc(db,'chamyaksa','members_2'), s => {
-                if (window._memberUploading) return;
-                window._activeMembers2 = s.exists() ? (s.data().list||[]) : [];
-                window._members2Loaded = true;
-                _mergeMemberLists();
+            MEMBER_CHUNK_DOCS.forEach((docId, i) => {
+                onSnapshot(doc(db,'chamyaksa',docId), s => {
+                    if (window._memberUploading) return;
+                    window._memberChunks[i] = s.exists() ? (s.data().list||[]) : [];
+                    window._memberChunksLoaded[i] = true;
+                    _mergeMemberLists();
+                });
             });
             onSnapshot(doc(db,'chamyaksa','members_archive'), s => {
                 if (window._memberUploading) return;
@@ -346,20 +355,63 @@
             onSnapshot(doc(db,'chamyaksa','pos'),s=>{if(s.exists())window.posList=s.data().list||[];window._posListLoaded=true;if(typeof window.runPosUnitMigration==='function')window.runPosUnitMigration();if(typeof window.renderPos==='function')window.renderPos();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
             onSnapshot(doc(db,'chamyaksa','posMonthly'),s=>{window.posMonthlyLedger=s.exists()?(s.data().ledger||{}):{};window._posLedgerLoaded=true;if(typeof window.runPosUnitMigration==='function')window.runPosUnitMigration();if(typeof window.renderPosMonthly==='function')window.renderPosMonthly();if(window.scheduleDashboardRefresh)window.scheduleDashboardRefresh();});
             window.saveConsults=async()=>{try{await setDoc(doc(db,'chamyaksa','consults'),{list:window.consultList||[]});}catch(e){console.error(e);alert('❌ 상담 저장 실패\n'+e.code+': '+e.message);throw e;}};
+            // 활성 회원 목록을 바이트 기준으로 순차 분할한다. (순서 보존)
+            window._packMemberChunks = function(active) {
+                const enc = new TextEncoder();
+                const cap = MEMBER_DOC_LIMIT * MEMBER_FILL_RATIO;
+                const chunks = [];
+                let cur = [], curBytes = 12;           // {"list":[]} 래퍼 여유
+                for (const r of active) {
+                    const b = enc.encode(JSON.stringify(r)).length + 1;   // +1 = 구분자
+                    if (cur.length && curBytes + b > cap) { chunks.push(cur); cur = []; curBytes = 12; }
+                    cur.push(r); curBytes += b;
+                }
+                if (cur.length) chunks.push(cur);
+                return chunks;
+            };
+            // 현재 사용량을 점검한다. 콘솔에서 window.checkMemberCapacity() 로 호출.
+            window.checkMemberCapacity = function() {
+                const enc = new TextEncoder();
+                const all = window.memberList || [];
+                const chunks = window._packMemberChunks(all.filter(r => !r._deleted));
+                const rows = chunks.map((c, i) => {
+                    const b = enc.encode(JSON.stringify({list:c})).length;
+                    return { 문서: MEMBER_CHUNK_DOCS[i] || '(초과)', 건수: c.length,
+                             크기: (b/1024).toFixed(1)+' KB', 한계대비: (b/MEMBER_DOC_LIMIT*100).toFixed(1)+'%' };
+                });
+                const arch = enc.encode(JSON.stringify({list: all.filter(r=>r._deleted)})).length;
+                rows.push({ 문서:'members_archive', 건수: all.filter(r=>r._deleted).length,
+                            크기:(arch/1024).toFixed(1)+' KB', 한계대비:(arch/MEMBER_DOC_LIMIT*100).toFixed(1)+'%' });
+                console.table(rows);
+                console.log(`청크 사용 ${chunks.length} / ${MEMBER_CHUNK_DOCS.length}`);
+                return rows;
+            };
             window.saveMembers=async()=>{
                 try {
                     const all = window.memberList || [];
                     const active  = all.filter(r => !r._deleted);
                     const archive = all.filter(r =>  r._deleted);
-                    const chunk1  = active.slice(0, 300);
-                    const chunk2  = active.slice(300);
-                    await setDoc(doc(db,'chamyaksa','members'),         {list: chunk1});
-                    await setDoc(doc(db,'chamyaksa','members_2'),       {list: chunk2});
-                    await setDoc(doc(db,'chamyaksa','members_archive'), {list: archive});
-                    console.log('[저장완료] chunk1:', chunk1.length, '/ chunk2:', chunk2.length, '/ archive:', archive.length);
+                    const chunks  = window._packMemberChunks(active);
+                    // 청크 문서가 부족하면 아무것도 쓰지 않고 중단한다 (부분 저장 방지)
+                    if (chunks.length > MEMBER_CHUNK_DOCS.length) {
+                        throw new Error('회원 데이터가 청크 문서 ' + MEMBER_CHUNK_DOCS.length +
+                                        '개를 초과했습니다. MEMBER_CHUNK_DOCS 배열에 문서를 추가하고 Firestore 규칙을 확인하세요.');
+                    }
+                    // 전체를 하나의 배치로 커밋 → 일부만 저장되는 상태가 생기지 않는다
+                    const batch = writeBatch(db);
+                    for (let i = 0; i < MEMBER_CHUNK_DOCS.length; i++) {
+                        const list = chunks[i] || [];
+                        // 이미 비어 있고 이번에도 비었다면 불필요한 쓰기를 생략
+                        if (!list.length && !(window._memberChunks[i] || []).length) continue;
+                        batch.set(doc(db,'chamyaksa',MEMBER_CHUNK_DOCS[i]), {list});
+                    }
+                    batch.set(doc(db,'chamyaksa','members_archive'), {list: archive});
+                    await batch.commit();
+                    console.log('[저장완료] 활성', active.length, '→',
+                                chunks.map(c => c.length).join(' + '), '/ 아카이브', archive.length);
                 } catch(e) {
                     console.error(e);
-                    alert('❌ 회원 저장 실패\n' + e.code + ': ' + e.message);
+                    alert('❌ 회원 저장 실패\n' + (e.code || '') + ': ' + e.message);
                     throw e;
                 }
             };
@@ -878,7 +930,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.5.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.6.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
