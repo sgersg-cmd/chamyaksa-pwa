@@ -72,9 +72,11 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.7.1  파일 백업 안내(30일 주기) 복원 — 저장 시점·위치를 사용자가 직접 관리하도록.
+                 헤더 배지에 자동 스냅샷/파일 백업 경과일 동시 표기
          14.7.0  ① 가맹상담도 바이트 기준 동적 분할 (consults_2~5 자동 확장)
-                 ② 백업 2종 — 로그인 시 7일 주기 자동 스냅샷(시스템 내부, 알림 없음, 4슬롯 순환)
-                    + [전체 백업] 버튼으로 PC에 파일 저장. 둘 다 원형 복원 가능
+                 ② 백업 2종 — ⓐ 로그인 시 7일 주기 자동 스냅샷(시스템 내부, 알림 없음, 4슬롯 순환)
+                    ⓑ 30일마다 안내 후 [전체 백업] 파일 저장(오프라인 사본). 둘 다 원형 복원 가능
                  ⑤ 약사 링크를 UUID별 개별 문서(chamyaksa_links)로 분리 — 매핑표 일괄 노출 차단
                  ③ 감사추적 — 저장 시 변경된 레코드에 _mBy(수정자)·_mAt(시각) 기록
                  ④ 뉴본/리본에 「판정 불가」 추가 (분류 기준 이전 가입 약국)
@@ -115,7 +117,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.7.0';</script>
+    <script>window.APP_VERSION = '14.7.1';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -647,6 +649,8 @@
                  · 저장 위치 : chamyaksa_backup/{슬롯}   (슬롯 4개 순환)
                  · 주기     : 마지막 스냅샷 후 7일 경과 시
                  · 동작     : 조용히 실행, 실패해도 사용자에게 알리지 않음
+               자동 스냅샷은 같은 Firebase 안에 있어 프로젝트 사고에는 대응하지 못한다.
+               그래서 30일마다 [전체 백업] 파일 저장을 안내한다. (아래 checkBackupReminder)
                잘못된 일괄 수정을 되돌리는 것이 목적이므로 최근 4개면 충분하다.
                계정·프로젝트 자체 사고에는 대응하지 못하므로, 오프라인 사본이
                필요할 때는 헤더의 [전체 백업] 버튼으로 파일을 받아 둔다.
@@ -725,9 +729,44 @@
                     const s = await getDoc(doc(db,'chamyaksa_backup','_meta'));
                     if (!s.exists()) { badge.textContent = '자동저장 대기'; badge.className='text-[9px] font-bold text-slate-400'; return; }
                     const days = Math.floor((Date.now() - (s.data().lastAt||0)) / 86400000);
-                    badge.textContent = '자동저장 ' + (days === 0 ? '오늘' : days + '일 전');
-                    badge.className = 'text-[9px] font-bold ' + (days >= 14 ? 'text-amber-300' : 'text-slate-400');
+                    const fileLast = parseInt(localStorage.getItem('chammate_last_backup') || '0', 10);
+                    const fileDays = fileLast ? Math.floor((Date.now() - fileLast) / 86400000) : null;
+                    badge.textContent = '자동 ' + (days === 0 ? '오늘' : days + 'd')
+                                      + ' · 파일 ' + (fileLast ? (fileDays === 0 ? '오늘' : fileDays + 'd') : '없음');
+                    badge.className = 'text-[9px] font-bold ' +
+                        ((!fileLast || fileDays >= 30 || days >= 14) ? 'text-amber-300' : 'text-slate-400');
                 } catch(e) { badge.textContent=''; }
+            };
+
+            /* ── 파일 백업 안내 (30일 주기) ───────────────────────────
+               자동 스냅샷과 별개로, PC에 파일로 남기는 오프라인 사본을 권한다.
+               언제·어디에 저장했는지 눈으로 확인·정리할 수 있어야 하므로
+               파일 저장은 자동화하지 않고 안내 후 사용자가 직접 받는다.
+               같은 날 중복 안내는 하지 않는다.
+               ──────────────────────────────────────────────────────── */
+            const FILE_BACKUP_INTERVAL_DAYS = 30;
+
+            window.checkBackupReminder = function() {
+                try {
+                    const last = parseInt(localStorage.getItem('chammate_last_backup') || '0', 10);
+                    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+                    if (last && days < FILE_BACKUP_INTERVAL_DAYS) return;
+
+                    const shownAt = parseInt(localStorage.getItem('chammate_backup_notice_at') || '0', 10);
+                    if (shownAt && (Date.now() - shownAt) < 86400000) return;   // 하루 1회
+                    localStorage.setItem('chammate_backup_notice_at', String(Date.now()));
+
+                    setTimeout(() => {
+                        const msg = (last
+                            ? '마지막 파일 백업이 ' + days + '일 전입니다.'
+                            : '아직 파일로 받아둔 백업이 없습니다.')
+                            + '\n\n지금 [전체 백업] 파일을 받으시겠습니까?'
+                            + '\n\n· 저장 위치 : 브라우저 다운로드 폴더'
+                            + '\n· 파일 이름 : 참메이트_백업_날짜_시각.json'
+                            + '\n· 시스템 내부 자동 스냅샷과 별개인 오프라인 사본입니다.';
+                        if (confirm(msg)) window.downloadFullBackup();
+                    }, 3000);
+                } catch(e) {}
             };
 
             window.savePosMonthlyLedger=async()=>{try{await setDoc(doc(db,'chamyaksa','posMonthly'),{ledger:window.posMonthlyLedger||{}});}catch(e){console.error('POS 월별 정산 저장 오류',e);}};
@@ -798,8 +837,9 @@
                 startListeners();
                 // 자동 스냅샷 + 배지 갱신 (사용자 알림 없음)
                 setTimeout(()=>{
-                    if(typeof window.autoSnapshot==='function') window.autoSnapshot();      // 조용히 실행
+                    if(typeof window.autoSnapshot==='function') window.autoSnapshot();          // 시스템 내부 스냅샷 (조용히)
                     if(typeof window.refreshBackupBadge==='function') window.refreshBackupBadge();
+                    if(typeof window.checkBackupReminder==='function') window.checkBackupReminder(); // 30일 파일백업 안내
                 }, 5000);
             } else {
                 // 로그인 필요
@@ -1248,7 +1288,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.1</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
