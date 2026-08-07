@@ -72,6 +72,10 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.7.3  약사 활동 로그 — 보류·중단 약국을 기본 목록에서 제외(개설행정 '진행중' 기준과 일치),
+                 전체 보기 시 보류·완료 상태 배지 표시
+         14.7.2  약사 활동 로그 — 약국 정보 없이 기록되던 문제 차단,
+                 이름 없는 기록이 한 줄로 뭉치던 합산 키 분리, 미기록 건에 ID 표시
          14.7.1  파일 백업 안내(30일 주기) 복원 — 저장 시점·위치를 사용자가 직접 관리하도록.
                  헤더 배지에 자동 스냅샷/파일 백업 경과일 동시 표기
          14.7.0  ① 가맹상담도 바이트 기준 동적 분할 (consults_2~5 자동 확장)
@@ -117,7 +121,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.7.1';</script>
+    <script>window.APP_VERSION = '14.7.3';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -236,6 +240,10 @@
         // 관리자만 조회 가능하도록 Firestore 규칙에서 read를 인증 사용자로 제한해야 함 (관리자 콘솔 규칙 참고).
         window.logActivity = function(action, pharmacyId, p) {
             if (isAdminView || !pharmacyId) return; // 약사 페이지에서만 기록, 관리자 본인 조작은 집계하지 않음
+            // 약국 정보를 못 찾았으면 기록하지 않는다. (2026-08-06)
+            // 이름이 빈 채로 저장되면 활동 로그에서 '-' 로만 보이고, 합산 키가 '약사명|약국명' 이라
+            // 이름 없는 기록끼리 한 줄로 뭉쳐 어느 약국인지 추적이 불가능해진다.
+            if (!p || (!p.pharmacist && !p.name)) return;
             try {
                 const ref = doc(db, 'user_activity', String(pharmacyId));
                 const payload = {
@@ -1288,7 +1296,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.3</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -3588,7 +3596,12 @@
             //  개설행정에서 약국을 삭제 후 재등록하면 새 ID가 부여되어 로그가 2줄로 나뉘던 문제 해결.
             //  약사명+약국명이 같으면 하나로 합치고, 방문/클릭 수를 더한다.
             const _admins = window.masterPharmacies || [];
-            const _key = r => `${(r.pharmacistName||'').trim()}|${(r.pharmacyName||'').trim()}`;
+            // 이름이 있는 기록은 약사명+약국명으로 합치되(삭제 후 재등록 대응),
+            // 이름이 비어 있는 옛 기록은 서로 다른 약국일 수 있으므로 문서 ID로 분리한다.
+            const _key = r => {
+                const nm = `${(r.pharmacistName||'').trim()}|${(r.pharmacyName||'').trim()}`;
+                return nm === '|' ? `__noname__${r.id}` : nm;
+            };
             const _merged = {};
             rows.forEach(r => {
                 const k = _key(r);
@@ -3601,13 +3614,22 @@
                 m.visitCount += (r.visitCount || 0);
                 Object.entries(r.clicks || {}).forEach(([ck, cv]) => { m.clicks[ck] = (m.clicks[ck] || 0) + cv; });
                 if ((r.lastVisit?.seconds || 0) > (m.lastVisit?.seconds || 0)) m.lastVisit = r.lastVisit;
-                if (live) { m._live = true; m.id = r.id; m._done = (typeof isExpired === 'function') ? isExpired(live) : false; }
+                if (live) {
+                    m._live = true; m.id = r.id;
+                    m._done = (typeof isExpired === 'function') ? isExpired(live) : false;
+                    // 개설행정 목록의 '진행중' 정의와 동일하게 보류/중단을 구분한다.
+                    m._hold = (live.setupStatus === '보류' || live.setupStatus === '중단');
+                    m._holdLabel = live.setupStatus || '';
+                }
             });
             let allRows = Object.values(_merged);
             const orphanCount = allRows.filter(r => !r._live).length;   // 개설행정에 없는 기록
-            const doneCount   = allRows.filter(r => r._live && r._done).length;
+            const doneCount   = allRows.filter(r => r._live && !r._hold && r._done).length;
+            const holdCount   = allRows.filter(r => r._live && r._hold).length;
             // 기본은 진행중만 표시 (완료·고아는 토글로)
-            if (!window._actLogShowAll) allRows = allRows.filter(r => r._live && !r._done);
+            // 활동 로그는 개설행정 목록에 '진행중'으로 살아 있는 약국만 본다.
+            // (보류·중단은 약사 안내가 멈춘 상태이므로 방문 통계에 섞이면 안 됨)
+            if (!window._actLogShowAll) allRows = allRows.filter(r => r._live && !r._done && !r._hold);
             rows = allRows;
 
             rows.sort((a,b) => (b.lastVisit?.seconds||0) - (a.lastVisit?.seconds||0));
@@ -3628,11 +3650,11 @@
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
                     <p class="text-[11px] text-slate-500 font-semibold">
                         진행중 <b class="text-slate-700">${rows.length}</b>곳
-                        ${doneCount?` · 완료 ${doneCount}`:''}${orphanCount?` · 삭제된 약국 ${orphanCount}`:''}
+                        ${doneCount?` · 완료 ${doneCount}`:''}${holdCount?` · 보류·중단 ${holdCount}`:''}${orphanCount?` · 삭제된 약국 ${orphanCount}`:''}
                     </p>
                     <button onclick="window._actLogShowAll=!window._actLogShowAll;showActivityDashboard();"
                         class="text-[11px] font-bold px-3 py-1.5 rounded-lg border transition-colors ${window._actLogShowAll?'bg-slate-700 text-white border-slate-700':'bg-white text-slate-600 hover:bg-slate-50'}">
-                        ${window._actLogShowAll?'진행중만 보기':'완료·삭제 포함 보기'}
+                        ${window._actLogShowAll?'진행중만 보기':'완료·보류·삭제 포함 보기'}
                     </button>
                 </div>
                 <div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse min-w-[460px]">
@@ -3644,8 +3666,8 @@
                         rows.length===0
                         ? `<tr><td colspan="6" class="text-center py-8 text-slate-300">아직 기록된 활동이 없습니다</td></tr>`
                         : rows.map(r => `<tr class="hover:bg-slate-50">
-                            <td class="p-2 font-bold">${r.pharmacyName||'-'}</td>
-                            <td class="p-2">${r.pharmacistName||'-'}</td>
+                            <td class="p-2 font-bold">${r.pharmacyName || `<span class="text-slate-400 font-normal">기록 없음</span>`}${r._hold?` <span class="ml-1 text-[9px] bg-amber-100 text-amber-700 rounded px-1 py-0.5 font-bold align-middle">${r._holdLabel||'보류'}</span>`:''}${(r._live&&r._done)?` <span class="ml-1 text-[9px] bg-emerald-100 text-emerald-700 rounded px-1 py-0.5 font-bold align-middle">완료</span>`:''}</td>
+                            <td class="p-2">${r.pharmacistName || `<span class="text-[10px] text-slate-400">${r._live?'이름 미기록':'삭제된 약국'} · ID ${r.id}</span>`}</td>
                             <td class="p-2 text-center font-bold text-slate-600">${r.visitCount||0}</td>
                             <td class="p-2 text-center text-blue-600">${r.clicks?.setStatus||0}</td>
                             <td class="p-2 text-center text-amber-600">${r.clicks?.sendStepRequest||0}</td>
