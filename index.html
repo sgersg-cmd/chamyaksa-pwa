@@ -73,6 +73,7 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.8.0  가입자관리 대시보드 — 가입비 면제 현황 추가(총액·뉴본/리본 구분·월별 집계)
          14.7.3  약사 활동 로그 — 보류·중단 약국을 기본 목록에서 제외(개설행정 '진행중' 기준과 일치),
                  전체 보기 시 보류·완료 상태 배지 표시
          14.7.2  약사 활동 로그 — 약국 정보 없이 기록되던 문제 차단,
@@ -122,7 +123,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.7.3';</script>
+    <script>window.APP_VERSION = '14.8.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1297,7 +1298,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.7.3</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.8.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -3286,6 +3287,19 @@
         };
 
         // ── 금액 표기: 1억 이상이면 X억 X,XXXx만원 형식 ──
+        // ── 가입비 면제 금액 산출 ──
+        // 면제(payment==='면제')는 실입금이 0이므로 매출에는 안 잡히지만,
+        // "얼마를 면제해 주었는가"는 별도로 관리해야 하는 영업 비용성 수치다.
+        // 기준 가입비: 뉴본 820만원 / 리본 545만원
+        // joinFee에 실제 금액이 입력돼 있으면 그 값을 우선하고(개별 협의가), 없으면 기준액으로 본다.
+        window.EXEMPT_STANDARD = { '뉴본': 820, '리본': 545 };
+        window.computeExemptAmount = function(r){
+            if (r.payment !== '면제') return 0;
+            const fee = parseFloat(r.joinFee || 0);
+            if (fee > 0) return fee;
+            return window.EXEMPT_STANDARD[r.newborn] || 0;
+        };
+
         // 실입금액 계산: joinPaid 필드는 거의 입력되지 않고(전체 회원 중 2건만 사용),
         // 실제로는 payment(완납/분납중)+paymentRemain(미수금)으로 입력되는 것이 현실 데이터 패턴.
         // → 미수금 정보가 있으면 "가입비-미수금"으로 계산, 없으면 레거시 joinPaid 필드로 폴백.
@@ -4079,10 +4093,11 @@
             const list = (window.memberList || []).filter(r => !r._deleted);
             const archiveCount = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='archive').length;
             const trashCount   = (window.memberList||[]).filter(r=>r._deleted && r._archiveType==='trash').length;
-            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={},monthlyDiscount={},monthlyPoint={},monthlyRemain={};
+            const grades={},svs={},newborns={},payStatus={},monthlyMember={},monthlyFee={},monthlyPaid={},monthlyDiscount={},monthlyPoint={},monthlyRemain={},monthlyExempt={},monthlyExemptCnt={};
             const mAgeMap={}, mGenderMap={};
             let activeCount=0;
             let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0,totalRemain=0;
+            let totalExempt=0, exemptCnt=0, exemptNbAmt=0, exemptNbCnt=0, exemptRbAmt=0, exemptRbCnt=0;
             const today = new Date().toISOString().split('T')[0];
             list.forEach(r => {
                 activeCount++;
@@ -4101,6 +4116,12 @@
                 totalDiscount+=discount;
                 totalPoint+=point;
                 totalRemain+=remain;
+                const exempt = window.computeExemptAmount(r);
+                if(exempt>0 || r.payment==='면제'){
+                    totalExempt+=exempt; exemptCnt++;
+                    if(r.newborn==='뉴본'){ exemptNbAmt+=exempt; exemptNbCnt++; }
+                    else if(r.newborn==='리본'){ exemptRbAmt+=exempt; exemptRbCnt++; }
+                }
                 const m=(r.date||'').slice(0,7);
                 if(m){
                     monthlyMember[m]=(monthlyMember[m]||0)+1;
@@ -4109,6 +4130,10 @@
                     monthlyDiscount[m]=(monthlyDiscount[m]||0)+discount;
                     monthlyPoint[m]=(monthlyPoint[m]||0)+point;
                     monthlyRemain[m]=(monthlyRemain[m]||0)+remain;
+                    if(exempt>0 || r.payment==='면제'){
+                        monthlyExempt[m]=(monthlyExempt[m]||0)+exempt;
+                        monthlyExemptCnt[m]=(monthlyExemptCnt[m]||0)+1;
+                    }
                 }
             });
             const sortedM=Object.keys(monthlyMember).sort().slice(-6);
@@ -4122,6 +4147,29 @@
                 <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-100 text-center"><p class="text-[10px] text-indigo-500 font-bold">리본</p><p class="text-3xl font-black text-indigo-700">${nRibon}</p><p class="text-[10px] text-slate-400">${list.length>0?Math.round(nRibon/list.length*100):0}%</p></div>
                 <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">완납</p><p class="text-3xl font-black text-emerald-700">${list.filter(r=>r.payment==='완납').length}</p></div>
             </div>
+            ${exemptCnt>0?`
+            <div class="bg-purple-50 rounded-xl p-3 border border-purple-100 mb-4">
+                <p class="text-xs font-bold text-purple-700 mb-2"><i class="fa-solid fa-gift mr-1"></i>가입비 면제 현황
+                    <span class="text-[10px] text-slate-400 font-normal ml-1">매출에는 잡히지 않는 영업 비용</span></p>
+                <div class="grid grid-cols-3 gap-2 text-xs text-center">
+                    <div class="bg-white rounded-lg p-2 border border-purple-200 min-w-0">
+                        <p class="text-[9px] text-purple-500 font-bold truncate">총 면제액</p>
+                        <p class="text-[11px] sm:text-sm font-black text-purple-700 truncate leading-tight">${window.fmtAmt(totalExempt)}</p>
+                        <p class="text-[8px] text-slate-400 truncate">${exemptCnt}건</p>
+                    </div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0">
+                        <p class="text-[9px] text-teal-600 font-bold truncate">뉴본</p>
+                        <p class="text-[11px] sm:text-sm font-black text-teal-700 truncate leading-tight">${window.fmtAmt(exemptNbAmt)}</p>
+                        <p class="text-[8px] text-slate-400 truncate">${exemptNbCnt}건 · 기준 820만</p>
+                    </div>
+                    <div class="bg-white rounded-lg p-2 border min-w-0">
+                        <p class="text-[9px] text-indigo-500 font-bold truncate">리본</p>
+                        <p class="text-[11px] sm:text-sm font-black text-indigo-700 truncate leading-tight">${window.fmtAmt(exemptRbAmt)}</p>
+                        <p class="text-[8px] text-slate-400 truncate">${exemptRbCnt}건 · 기준 545만</p>
+                    </div>
+                </div>
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 면제액 = 납입상태가 「면제」인 회원의 가입금액. 입력값이 없으면 기준 가입비(뉴본 820만원 / 리본 545만원)로 산정합니다.<br>※ 실입금이 0이므로 실마진에는 포함되지 않습니다. 할인해 준 규모를 파악하기 위한 지표입니다.${(exemptCnt-exemptNbCnt-exemptRbCnt)>0?`<br>※ 뉴본·리본 미분류 ${exemptCnt-exemptNbCnt-exemptRbCnt}건은 총 면제액에만 반영됩니다.`:''}</p>
+            </div>`:''}
             <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-4">
                 <p class="text-xs font-bold text-blue-700 mb-2"><i class="fa-solid fa-won-sign mr-1"></i>가입비 현황</p>
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-center">
@@ -4160,6 +4208,7 @@
                                     <div class="flex justify-between"><span class="text-slate-400">실 입금액</span><span class="font-bold text-emerald-600">${window.fmtAmt(g(monthlyPaid,m))}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-400">미수금</span><span class="font-bold text-amber-600">${g(monthlyRemain,m)>0?window.fmtAmt(g(monthlyRemain,m)):dash}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-400">가맹비 할인</span><span class="font-bold text-slate-400">${g(monthlyDiscount,m)>0?window.fmtAmt(g(monthlyDiscount,m)):dash}</span></div>
+                                    <div class="flex justify-between"><span class="text-purple-600">가입비 면제</span><span class="font-bold text-purple-700">${g(monthlyExempt,m)>0?window.fmtAmt(g(monthlyExempt,m))+' ('+g(monthlyExemptCnt,m)+'건)':dash}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-400">포인트 지급</span><span class="font-bold text-purple-600">${g(monthlyPoint,m)>0?'-'+window.fmtAmt(g(monthlyPoint,m)):dash}</span></div>
                                     <div class="flex justify-between border-t pt-1 mt-1"><span class="font-bold text-blue-700">실마진</span><span class="font-black text-blue-700">${window.fmtAmt(netOf(m))}</span></div>
                                 </div>
@@ -4171,6 +4220,7 @@
                                     <div class="flex justify-between"><span class="text-slate-500">실 입금액</span><span class="font-bold text-emerald-700">${window.fmtAmt(sum(monthlyPaid))}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-500">미수금</span><span class="font-bold text-amber-700">${window.fmtAmt(sum(monthlyRemain))}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-500">가맹비 할인</span><span class="font-bold text-slate-500">${window.fmtAmt(sum(monthlyDiscount))}</span></div>
+                                    <div class="flex justify-between"><span class="text-purple-600">가입비 면제</span><span class="font-bold text-purple-700">${window.fmtAmt(sum(monthlyExempt))}</span></div>
                                     <div class="flex justify-between"><span class="text-slate-500">포인트 지급</span><span class="font-bold text-purple-800">-${window.fmtAmt(sum(monthlyPoint))}</span></div>
                                     <div class="flex justify-between border-t border-blue-200 pt-1 mt-1"><span class="font-black text-blue-800">실마진</span><span class="font-black text-blue-800">${window.fmtAmt(sum(monthlyPaid)-sum(monthlyPoint))}</span></div>
                                 </div>
@@ -4180,7 +4230,7 @@
 
                     // ── 데스크탑: 압축 표 + 실마진 컬럼 우측 고정(sticky) ──
                     const th='px-1.5 py-2 whitespace-nowrap', td='px-1.5 py-2 whitespace-nowrap';
-                    return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-[11px] border-collapse min-w-[560px]">
+                    return `<div class="overflow-x-auto int-month-scroll"><table class="w-full text-[11px] border-collapse min-w-[640px]">
                         <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
                             <th class="${th} text-left">월</th>
                             <th class="${th} text-center">가입자</th>
@@ -4188,6 +4238,7 @@
                             <th class="${th} text-right text-emerald-600">실입금</th>
                             <th class="${th} text-right text-amber-600">미수금</th>
                             <th class="${th} text-right text-slate-400">할인</th>
+                            <th class="${th} text-right text-purple-700">면제</th>
                             <th class="${th} text-right text-purple-600">포인트</th>
                             <th class="${th} text-right text-blue-700 sticky right-0 bg-slate-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">실마진</th>
                         </tr></thead>
@@ -4198,6 +4249,7 @@
                             <td class="${td} text-right font-bold text-emerald-600">${window.fmtAmt(g(monthlyPaid,m))}</td>
                             <td class="${td} text-right font-bold text-amber-600">${g(monthlyRemain,m)>0?window.fmtAmt(g(monthlyRemain,m)):dash}</td>
                             <td class="${td} text-right font-bold text-slate-400">${g(monthlyDiscount,m)>0?window.fmtAmt(g(monthlyDiscount,m)):dash}</td>
+                            <td class="${td} text-right font-bold text-purple-700">${g(monthlyExempt,m)>0?window.fmtAmt(g(monthlyExempt,m))+`<span class="text-[8px] text-slate-400 ml-0.5">${g(monthlyExemptCnt,m)}건</span>`:dash}</td>
                             <td class="${td} text-right font-bold text-purple-600">${g(monthlyPoint,m)>0?'-'+window.fmtAmt(g(monthlyPoint,m)):dash}</td>
                             <td class="${td} text-right font-black text-blue-700 sticky right-0 bg-white group-hover:bg-slate-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">${window.fmtAmt(netOf(m))}</td>
                         </tr>`).join('')}
@@ -4208,6 +4260,7 @@
                             <td class="${td} text-right text-emerald-800">${window.fmtAmt(sum(monthlyPaid))}</td>
                             <td class="${td} text-right text-amber-700">${window.fmtAmt(sum(monthlyRemain))}</td>
                             <td class="${td} text-right text-slate-500">${window.fmtAmt(sum(monthlyDiscount))}</td>
+                            <td class="${td} text-right text-purple-800">${window.fmtAmt(sum(monthlyExempt))}</td>
                             <td class="${td} text-right text-purple-800">-${window.fmtAmt(sum(monthlyPoint))}</td>
                             <td class="${td} text-right text-blue-800 sticky right-0 bg-blue-50 border-l shadow-[-4px_0_6px_-4px_rgba(0,0,0,.15)]">${window.fmtAmt(sum(monthlyPaid)-sum(monthlyPoint))}</td>
                         </tr>
