@@ -73,6 +73,10 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.9.3  약사회원 면제는 개설 가입비(820/545) 기준 대상이 아님을 반영,
+                 금액 산정 불가 사유를 약사회원/구분미입력으로 나누어 안내
+         14.9.2  면제 사유 분류를 실데이터 기준으로 재설계(강연·이벤트/분쟁 보상/본사 임직원 신설),
+                 자동 추정 우선순위 정정 — 사유가 있으면 메모를 보지 않도록 변경
          14.9.1  [중요] 면제 회원 수정 모달을 열기만 해도 가입금액이 0으로 덮이던 문제 수정,
                  뉴본/리본 미분류 면제 건의 금액 미산정 안내 명확화
          14.9.0  가입비 면제 사유 분류 체계 — 조건부/무조건부 구분, 분류 드롭다운 신설,
@@ -129,7 +133,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.9.1';</script>
+    <script>window.APP_VERSION = '14.9.3';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1304,7 +1308,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.9.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.9.3</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -3154,7 +3158,7 @@
                 catEl.addEventListener('change', ()=>{
                     const hint=document.getElementById('m-exempt-cat-hint');
                     const c=(window.EXEMPT_CATEGORIES||[]).find(x=>x.key===catEl.value);
-                    if(hint) hint.textContent = c ? `${c.desc} · ${c.type==='조건부'?'반대급부가 있는 면제(투자성)':'반대급부가 없는 면제(비용성)'}` : '';
+                    if(hint) hint.textContent = c ? `${c.desc} · ${c.type==='조건부'?'반대급부가 있어 회수 가능':'회수 조건 없음'}` : '';
                 });
             }
             if (v === '완납') {
@@ -3333,31 +3337,42 @@
         //  이 둘을 섞어 놓으면 면제 총액이 커 보여도 실제 손실 규모를 알 수 없다.
         // ══════════════════════════════════════════════════════════
         window.EXEMPT_CATEGORIES = [
-            { key: '조건부(게런티)', type: '조건부', desc: '참백제·PB·POS 등 사용 조건을 받고 면제' },
-            { key: '전략적 출점',    type: '조건부', desc: '핵심 상권 선점 등 전략적 판단' },
-            { key: '다점포·재개설',  type: '조건부', desc: '기존 회원의 추가 개설·재개설 우대' },
-            { key: '대표·임원 지인', type: '무조건부', desc: '대표님/임원 소개 및 관계' },
-            { key: 'VIP·약사회원',   type: '무조건부', desc: 'VIP 약사회원 등 자격에 따른 면제' },
-            { key: '본사 관계자',    type: '무조건부', desc: '본사 임직원·관계사' },
-            { key: '프로모션',       type: '무조건부', desc: '한시적 이벤트·프로모션' },
-            { key: '기타',           type: '무조건부', desc: '위에 해당하지 않는 경우' },
+            { key: '대표·임원 지인',  type: '관계',   desc: '대표님·이사 등 임원 소개로 가입' },
+            { key: 'VIP·약사회원',    type: '정책',   desc: 'VIP 자격 / 약국 없는 약사회원' },
+            { key: '본사 임직원',      type: '정책',   desc: '본사 임원진·직원 본인' },
+            { key: '강연·이벤트 당첨', type: '마케팅', desc: '샛별약사 강연 등 이벤트 경품' },
+            { key: '분쟁 보상',        type: '보상',   desc: '시공·서비스 문제에 대한 보상 차원' },
+            { key: '조건부(게런티)',   type: '조건부', desc: '참백제·PB·POS 등 사용 조건을 받고 면제' },
+            { key: '기타',            type: '기타',   desc: '위에 해당하지 않는 경우' },
         ];
-        window.exemptCategoryType = key => (window.EXEMPT_CATEGORIES.find(c=>c.key===key)||{}).type || '무조건부';
+        window.exemptCategoryType = key => (window.EXEMPT_CATEGORIES.find(c=>c.key===key)||{}).type || '기타';
 
         // 기존 자유 텍스트를 분류로 추정한다. (확정이 아니라 '추정' — 담당자 확인 후 확정)
-        // 위에서부터 먼저 걸리는 규칙을 적용하므로, 구체적인 조건을 앞에 둔다.
+        // 판정 순서가 곧 우선순위다. 실데이터 검증 결과 아래 순서가 필요했다.
+        //  · '전액 면제/무상'은 거의 모든 면제 건에 등장하므로 분류 근거로 쓸 수 없다.
+        //  · '지인'과 'VIP'가 함께 적힌 건이 많아, 소개자(관계)를 우선한다.
+        //  · exemptReason 이 비어 있으면 memo 를 참고하되, memo 는 서술이 길어 오탐이 나기 쉬우므로
+        //    분류 근거가 되는 표현만 좁게 본다.
         window.classifyExemptReason = function(r){
-            const t = `${r.exemptReason||''} ${r.joinDiscountMemo||''} ${r.memo||''}`.replace(/\s/g,'');
-            if(!t.trim()) return '';
-            if(/게런티|개런티|참백제|백제월|PB제품|초도발주|POS사용|포스사용|사용확정|조건협상/.test(t)) return '조건부(게런티)';
-            if(/전략|상권선점|핵심상권|거점/.test(t)) return '전략적 출점';
-            if(/다점포|2호점|추가개설|재개설|기존회원/.test(t)) return '다점포·재개설';
-            if(/대표님지인|대표지인|임원지인|이사님소개|대표님소개|지인/.test(t)) return '대표·임원 지인';
-            if(/VIP|브이아이피|약사회원/.test(t)) return 'VIP·약사회원';
-            if(/본사|임직원|관계사|직원/.test(t)) return '본사 관계자';
-            if(/프로모션|이벤트|캠페인|한시/.test(t)) return '프로모션';
+            const reason = String(r.exemptReason||'').replace(/\s/g,'');
+            const memo   = String(r.memo||'').replace(/\s/g,'');
+            const t = reason || memo;                     // 사유가 있으면 사유만 본다
+            if(!t) return '';
+            if(/분쟁|보상|하자|문제발생|시공진행문제|대금지급/.test(t))          return '분쟁 보상';
+            if(/게런티|개런티|참백제|PB제품|초도발주|POS사용|포스사용|사용확정/.test(t)) return '조건부(게런티)';
+            if(/본사임원|임원진|본사직원|임직원/.test(t))                      return '본사 임직원';
+            // '지인·소개'가 '강의·이벤트'보다 앞선다.
+            // 메모에는 이후 활동 이력(참스쿨 강의 출강 등)이 함께 적히는 경우가 많아,
+            // 강의 키워드를 먼저 보면 소개로 가입한 건이 이벤트 당첨으로 잘못 분류된다.
+            if(/지인|소개/.test(t))                                          return '대표·임원 지인';
+            // 당첨·경품은 이벤트 면제의 직접 근거이므로 단독으로도 인정하고,
+            // 강연·강의는 '무료/면제'와 함께 등장할 때만 근거로 본다.
+            if(/당첨|경품/.test(t))                                          return '강연·이벤트 당첨';
+            if(/(강연|강의|이벤트)/.test(t) && /무료|면제|할인/.test(t))        return '강연·이벤트 당첨';
+            if(/VIP|브이아이피|약사회원/.test(t))                             return 'VIP·약사회원';
             return '기타';
         };
+
         // 확정 분류 우선, 없으면 추정값 사용
         window.getExemptCategory = function(r){
             const c = String(r.exemptCategory||'').trim();
@@ -3388,11 +3403,13 @@
         window.computeExemptAmount = function(r){
             if (r.payment !== '면제') return 0;
             const fee = parseFloat(r.joinFee || 0);
-            if (fee > 0) return fee;
+            if (fee > 0) return fee;                    // 개별 협의가가 남아 있으면 그 값 우선
+            // 약사회원(약국 없음)은 약국 개설 가입비(820/545) 대상이 아니다.
+            // 회원비가 건별로 달라(200~490만원 등) 일괄 기준을 적용할 수 없으므로 산정하지 않는다.
+            if (String(r.grade||'').includes('약사회원')) return 0;
             const std = window.EXEMPT_STANDARD[r.newborn];
             if (std) return std;
-            // 뉴본/리본 미분류 건: 개국일이 가입일 이후면 신규 개설(뉴본)로 보는 것이 합리적이나,
-            // 추정으로 금액을 부풀리지 않도록 0 으로 두고 대시보드에서 '금액 산정 불가'로 안내한다.
+            // 뉴본/리본 미분류: 추정으로 금액을 부풀리지 않도록 0 으로 두고 대시보드에서 안내한다.
             return 0;
         };
 
@@ -4195,6 +4212,7 @@
             let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0,totalRemain=0;
             let totalExempt=0, exemptCnt=0, exemptNbAmt=0, exemptNbCnt=0, exemptRbAmt=0, exemptRbCnt=0;
             const exemptByCat={}; let exemptGuessed=0, exemptCondAmt=0, exemptUncondAmt=0;
+            let exemptNoAmt=0, exemptNoAmtPharmacist=0;
             const today = new Date().toISOString().split('T')[0];
             list.forEach(r => {
                 activeCount++;
@@ -4218,6 +4236,7 @@
                     totalExempt+=exempt; exemptCnt++;
                     if(r.newborn==='뉴본'){ exemptNbAmt+=exempt; exemptNbCnt++; }
                     else if(r.newborn==='리본'){ exemptRbAmt+=exempt; exemptRbCnt++; }
+                    if(exempt===0){ exemptNoAmt++; if(String(r.grade||'').includes('약사회원')) exemptNoAmtPharmacist++; }
                     const cat = window.getExemptCategory(r);
                     if(!exemptByCat[cat.key]) exemptByCat[cat.key]={amt:0,cnt:0,guessed:0};
                     exemptByCat[cat.key].amt+=exempt; exemptByCat[cat.key].cnt++;
@@ -4277,7 +4296,7 @@
                 <div class="mt-2 bg-white rounded-lg p-2.5 border border-purple-200">
                     <div class="flex items-center justify-between mb-1.5">
                         <p class="text-[10px] font-bold text-purple-700">면제 사유별</p>
-                        <p class="text-[9px] text-slate-400">조건부 <b class="text-teal-600">${window.fmtAmt(exemptCondAmt)}</b> · 무조건부 <b class="text-rose-600">${window.fmtAmt(exemptUncondAmt)}</b></p>
+                        <p class="text-[9px] text-slate-400">회수 조건 있음 <b class="text-teal-600">${window.fmtAmt(exemptCondAmt)}</b> · 없음 <b class="text-rose-600">${window.fmtAmt(exemptUncondAmt)}</b></p>
                     </div>
                     <div class="space-y-1">
                     ${Object.entries(exemptByCat).sort((a,b)=>b[1].amt-a[1].amt).map(([k,v])=>{
@@ -4293,7 +4312,7 @@
                     </div>
                     ${exemptGuessed>0?`<p class="text-[9px] text-amber-600 mt-1.5"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i>${exemptGuessed}건은 사유 텍스트로 <b>자동 추정</b>한 분류입니다. 회원 수정에서 「면제 분류」를 선택하면 확정됩니다.</p>`:''}
                 </div>`:''}
-                <p class="text-[9px] text-slate-400 mt-1.5">※ <b>조건부</b>는 게런티·발주 등 반대급부를 받은 면제(투자성), <b>무조건부</b>는 관계·정책상 면제(비용성)입니다.<br>※ 면제액 = 납입상태가 「면제」인 회원의 가입금액. 입력값이 없으면 기준 가입비(뉴본 820만원 / 리본 545만원)로 산정합니다.<br>※ 실입금이 0이므로 실마진에는 포함되지 않습니다. 할인해 준 규모를 파악하기 위한 지표입니다.${(exemptCnt-exemptNbCnt-exemptRbCnt)>0?`<br><span class="text-amber-600">※ 뉴본·리본 미분류 ${exemptCnt-exemptNbCnt-exemptRbCnt}건은 기준 가입비를 정할 수 없어 <b>금액이 0으로 집계</b>됩니다. 건수만 잡히므로 구분을 입력해 주세요.</span>`:''}</p>
+                <p class="text-[9px] text-slate-400 mt-1.5">※ <b>조건부</b>는 게런티·발주 등 반대급부를 받아 회수 가능한 면제, 그 외(관계·정책·마케팅·보상)는 회수 조건이 없는 면제입니다.<br>※ 면제액 = 납입상태가 「면제」인 회원의 가입금액. 입력값이 없으면 기준 가입비(뉴본 820만원 / 리본 545만원)로 산정합니다.<br>※ 실입금이 0이므로 실마진에는 포함되지 않습니다. 할인해 준 규모를 파악하기 위한 지표입니다.${exemptNoAmt>0?`<br><span class="text-amber-600">※ ${exemptNoAmt}건은 금액을 산정할 수 없어 <b>건수만</b> 집계됩니다.${exemptNoAmtPharmacist>0?` (약사회원 ${exemptNoAmtPharmacist}건 — 회원비가 건별로 달라 기준 적용 불가)`:''}${(exemptNoAmt-exemptNoAmtPharmacist)>0?` (뉴본·리본 미분류 ${exemptNoAmt-exemptNoAmtPharmacist}건 — 구분을 입력하면 반영됩니다)`:''}</span>`:''}</p>
             </div>`:''}
             <div class="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-4">
                 <p class="text-xs font-bold text-blue-700 mb-2"><i class="fa-solid fa-won-sign mr-1"></i>가입비 현황</p>
