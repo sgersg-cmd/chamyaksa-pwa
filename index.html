@@ -73,6 +73,9 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.11.0 백업 시 선택분/전체 확인 팝업 추가(체크 사실을 모르고 받는 것 방지),
+                 참포스 백업 드롭다운 복원(body 직속 fixed 로 잘림 해결),
+                 가입자관리·가맹상담도 체크 항목만 백업 가능
          14.10.1 참포스 백업 버튼을 V2.0/V1.0/전체로 분리(드롭다운이 상위 요소의
                  overflow 에 잘려 열리지 않던 문제 해결), 체크한 항목이 있으면 선택분만 백업
          14.10.0 월별 정산관리의 입금확인·정산확인 헤더 일괄 체크
@@ -143,7 +146,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.10.1';</script>
+    <script>window.APP_VERSION = '14.11.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1318,7 +1321,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.10.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.11.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -1599,7 +1602,7 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">상담 업로드</span>
                     </button>
                     <input type="file" id="consult-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadConsultExcel(this)">
-                    <button onclick="exportListToCSV(window.consultList,'가맹상담')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
+                    <button onclick="backupWithSelection(window.consultList,'가맹상담','consult')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">상담 백업</span>
                     </button>
                     <button onclick="openConsultModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
@@ -1705,7 +1708,7 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">회원 업로드</span>
                     </button>
                     <input type="file" id="member-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadMemberExcel(this)">
-                    <button onclick="exportListToCSV(window.memberList,'가입자관리')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
+                    <button onclick="backupWithSelection(window.memberList,'가입자관리','member')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">회원 백업</span>
                     </button>
                     <button onclick="openMemberModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
@@ -2017,14 +2020,8 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">참포스 업로드</span>
                     </button>
                     <input type="file" id="pos-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadPosListExcel(this)">
-                    <button onclick="posBackup('V2.0')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0" title="V2.0(올댓페이) 목록만 백업합니다. 체크한 항목이 있으면 그 항목만 받습니다.">
-                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">V2.0 백업</span>
-                    </button>
-                    <button onclick="posBackup('V1.0')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0" title="V1.0(크레소티) 목록만 백업합니다. 체크한 항목이 있으면 그 항목만 받습니다.">
-                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">V1.0 백업</span>
-                    </button>
-                    <button onclick="posBackup('all')" class="bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0" title="V2.0 + V1.0 전체를 백업합니다.">
-                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">전체 백업</span>
+                    <button onclick="toggleBackupMenu('pos-backup-menu', this)" class="backup-menu-btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
+                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">참포스 백업</span><i class="fa-solid fa-caret-down ml-1"></i>
                     </button>
                     <button onclick="openPosModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-plus mr-1"></i> 신규 등록
@@ -3404,21 +3401,58 @@
             return '기타';
         };
 
-        // 참포스 백업 — 버전별(V2.0/V1.0) 또는 전체.
-        // 해당 목록에서 체크한 항목이 있으면 자동으로 그 항목만 내려받는다.
-        // (참포스 목록은 V2.0 / V1.0 두 테이블로 나뉘어 있어 체크도 따로 관리된다)
-        window.posBackup = function(mode){
-            const keys = mode === 'all' ? ['pos_v2','pos_v1'] : (mode === 'V2.0' ? ['pos_v2'] : ['pos_v1']);
+        // ══════════════════════════════════════════════════════════
+        //  엑셀 백업 — 체크한 항목이 있으면 확인 후 선택분만 내려받는다.
+        //  체크 사실을 모른 채 백업하면 파일 내용이 예상과 달라지므로,
+        //  선택분/전체 중 무엇을 받을지 반드시 사용자에게 묻는다.
+        // ══════════════════════════════════════════════════════════
+        window.backupWithSelection = function(list, label, uiKeys, filterFn){
+            const keys = Array.isArray(uiKeys) ? uiKeys : (uiKeys ? [uiKeys] : []);
             const ids = (typeof bulkGetCheckedIds === 'function')
                 ? keys.flatMap(k => bulkGetCheckedIds(k)) : [];
-            const label = mode === 'all' ? '참포스' : (mode === 'V2.0' ? '참포스_V2.0_올댓페이' : '참포스_V1.0_크레소티');
+            let base = (list||[]).filter(r => !r._deleted);
+            if(typeof filterFn === 'function') base = base.filter(filterFn);
+
             if(ids.length){
                 const set = new Set(ids.map(String));
-                return exportListToCSV(window.posList, label + '_선택' + ids.length + '건', null, r => set.has(String(r.id)));
+                const picked = base.filter(r => set.has(String(r.id)));
+                if(picked.length){
+                    const ok = confirm(
+                        `선택하신 ${picked.length}건만 백업하시겠습니까?\n\n` +
+                        `［확인］ 선택한 ${picked.length}건만 백업\n` +
+                        `［취소］ 전체 ${base.length}건 백업`);
+                    if(ok) return exportListToCSV(list, `${label}_선택${picked.length}건`, null, r => set.has(String(r.id)));
+                }
             }
-            if(mode === 'all') return exportListToCSV(window.posList, label);
-            exportListToCSV(window.posList, label, null, r => String(r.version||'') === mode);
+            return exportListToCSV(list, label, null, filterFn);
         };
+
+        // 참포스 백업 — 버전별(V2.0/V1.0) 또는 전체
+        window.posBackup = function(mode){
+            document.getElementById('pos-backup-menu')?.classList.add('hidden');
+            if(mode === 'all')
+                return window.backupWithSelection(window.posList, '참포스', ['pos_v2','pos_v1']);
+            const label = mode === 'V2.0' ? '참포스_V2.0_올댓페이' : '참포스_V1.0_크레소티';
+            const key   = mode === 'V2.0' ? 'pos_v2' : 'pos_v1';
+            return window.backupWithSelection(window.posList, label, [key], r => String(r.version||'') === mode);
+        };
+
+        // 드롭다운 열고 닫기 — 상위 요소의 overflow 에 잘리지 않도록 body 기준으로 띄운다.
+        window.toggleBackupMenu = function(menuId, btn){
+            const menu = document.getElementById(menuId);
+            if(!menu) return;
+            const willOpen = menu.classList.contains('hidden');
+            document.querySelectorAll('.backup-menu').forEach(m => m.classList.add('hidden'));
+            if(!willOpen) return;
+            const r = btn.getBoundingClientRect();
+            menu.style.top  = (r.bottom + 4) + 'px';
+            menu.style.left = Math.max(8, Math.min(r.right - 176, window.innerWidth - 184)) + 'px';
+            menu.classList.remove('hidden');
+        };
+        document.addEventListener('click', e => {
+            if(e.target.closest('.backup-menu') || e.target.closest('.backup-menu-btn')) return;
+            document.querySelectorAll('.backup-menu').forEach(m => m.classList.add('hidden'));
+        });
 
         // ── 미수금 정합성 탐지 ──
         // 미수금은 두 가지로 구할 수 있다.
@@ -10314,5 +10348,12 @@
         else boot();
     })();
     </script>
+    <!-- 백업 드롭다운 메뉴 — 상위 요소의 overflow 에 잘리지 않도록 body 직속 fixed 로 둔다 -->
+    <div id="pos-backup-menu" class="backup-menu hidden fixed w-44 bg-white border rounded-lg shadow-2xl z-[95] overflow-hidden">
+        <button onclick="posBackup('V2.0')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 font-bold">V2.0 (올댓페이)</button>
+        <button onclick="posBackup('V1.0')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t font-bold">V1.0 (크레소티)</button>
+        <button onclick="posBackup('all')"  class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t text-slate-500">전체 (V2.0+V1.0)</button>
+        <p class="text-[9px] text-slate-400 px-3 py-1.5 border-t bg-slate-50 leading-tight">체크한 항목이 있으면<br>선택분만 받을지 물어봅니다.</p>
+    </div>
 </body>
 </html>
