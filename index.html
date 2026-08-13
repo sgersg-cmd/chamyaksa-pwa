@@ -73,6 +73,16 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.10.0 백업/정산 편의 기능 — 목록에서 체크한 항목만 엑셀 백업,
+                 참포스 백업을 전체/V2.0/V1.0/선택분으로 분리, 월별 정산관리의
+                 입금확인·정산확인 헤더 일괄 체크
+         14.9.7  미수금 정합성 탐지(detectRemainMismatch) — 「가입금액−실입금」과 저장된
+                 미수금이 어긋나는 건 경고. 실데이터 8건 정정(보증금만 입력 2건, 미입력 6건)
+         14.9.6  실마진 카드에 역마진 표시 — 포인트 지급액이 실입금을 넘어선 건을 별도 집계
+         14.9.5  [중요] 금액 필드에 문자열이 섞이면 합계가 NaN 이 되어 화면에 0 으로만 보이던 문제.
+                 fmtAmt 가 NaN 을 '—' 로 표시하도록 변경하고, 숫자 필드 오염 탐지 경고 추가
+         14.9.4  면제 누락 탐지(detectMissingExempt) — 실입금 0인데 '완납'으로 처리된 건을
+                 대시보드에서 경고 표시. 실데이터 14건 발견하여 면제로 정정(11건→25건)
          14.9.3  약사회원 면제는 개설 가입비(820/545) 기준 대상이 아님을 반영,
                  금액 산정 불가 사유를 약사회원/구분미입력으로 나누어 안내
          14.9.2  면제 사유 분류를 실데이터 기준으로 재설계(강연·이벤트/분쟁 보상/본사 임직원 신설),
@@ -133,7 +143,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.9.3';</script>
+    <script>window.APP_VERSION = '14.10.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1308,7 +1318,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.9.3</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.10.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -1589,7 +1599,7 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">상담 업로드</span>
                     </button>
                     <input type="file" id="consult-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadConsultExcel(this)">
-                    <button onclick="exportListToCSV(window.consultList,'가맹상담')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
+                    <button onclick="exportListToCSV(window.consultList,'가맹상담','consult')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">상담 백업</span>
                     </button>
                     <button onclick="openConsultModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
@@ -1695,7 +1705,7 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">회원 업로드</span>
                     </button>
                     <input type="file" id="member-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadMemberExcel(this)">
-                    <button onclick="exportListToCSV(window.memberList,'가입자관리')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
+                    <button onclick="exportListToCSV(window.memberList,'가입자관리','member')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">회원 백업</span>
                     </button>
                     <button onclick="openMemberModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
@@ -1984,8 +1994,10 @@
                             <thead><tr class="bg-white/60 border-b border-indigo-200 text-[10px] text-indigo-500 font-bold uppercase">
                                 <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-include-all" class="w-4 h-4" checked onchange="togglePosMonthSelectAll(this)" title="전체 선택/해제"><span class="text-[9px] leading-none">전체</span></div></th>
                                 <th class="p-2">약국명</th><th class="p-2">약사명</th>
-                                <th class="p-2 text-right">월요금(만원)</th><th class="p-2 text-center">입금확인</th>
-                                <th class="p-2 text-right">정산금액(만원)</th><th class="p-2 text-center">정산확인</th>
+                                <th class="p-2 text-right">월요금(만원)</th>
+                                <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-fee-conf-all" class="w-4 h-4" onchange="togglePosMonthConfAll('fee', this)" title="입금확인 전체 선택/해제"><span class="text-[9px] leading-none">입금확인</span></div></th>
+                                <th class="p-2 text-right">정산금액(만원)</th>
+                                <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-sett-conf-all" class="w-4 h-4" onchange="togglePosMonthConfAll('sett', this)" title="정산확인 전체 선택/해제"><span class="text-[9px] leading-none">정산확인</span></div></th>
                             </tr></thead>
                             <tbody id="pos-month-table-body" class="divide-y divide-indigo-100 bg-white/40"></tbody>
                         </table>
@@ -2005,9 +2017,17 @@
                         <i class="fa-solid fa-file-arrow-up mr-1"></i><span class="text-[9px] sm:text-xs">참포스 업로드</span>
                     </button>
                     <input type="file" id="pos-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadPosListExcel(this)">
-                    <button onclick="exportListToCSV(window.posList,'참포스')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
-                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">참포스 백업</span>
-                    </button>
+                    <div class="relative flex-shrink-0">
+                        <button onclick="document.getElementById('pos-backup-menu').classList.toggle('hidden')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap">
+                            <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">참포스 백업</span><i class="fa-solid fa-caret-down ml-1"></i>
+                        </button>
+                        <div id="pos-backup-menu" class="hidden absolute right-0 mt-1 w-44 bg-white border rounded-lg shadow-xl z-30 overflow-hidden">
+                            <button onclick="posBackup('all')"  class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 font-bold">전체 백업</button>
+                            <button onclick="posBackup('V2.0')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t">V2.0 (올댓페이)만</button>
+                            <button onclick="posBackup('V1.0')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t">V1.0 (크레소티)만</button>
+                            <button onclick="posBackup('checked')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 border-t text-blue-600">선택한 항목만</button>
+                        </div>
+                    </div>
                     <button onclick="openPosModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-plus mr-1"></i> 신규 등록
                     </button>
@@ -2815,9 +2835,23 @@
         window.AMOUNT_FIELD_UNITS = AMOUNT_FIELD_UNITS;
 
         // 리스트(배열) 전체를 그대로 CSV로 백업 다운로드 (모든 필드 동적 포함, 중첩 객체는 JSON 문자열로)
-        function exportListToCSV(list, filenamePrefix) {
-            const data = (list || []).filter(r => !r._deleted);
+        // uiKey 를 넘기면 체크된 행만, 아무것도 체크하지 않았으면 전체를 내려받는다.
+        // filterFn 으로 참포스 V1.0/V2.0 처럼 일부만 골라 백업할 수도 있다.
+        function exportListToCSV(list, filenamePrefix, uiKey, filterFn) {
+            let data = (list || []).filter(r => !r._deleted);
+            if (typeof filterFn === 'function') data = data.filter(filterFn);
+            let picked = false;
+            if (uiKey && typeof bulkGetCheckedIds === 'function') {
+                const ids = (Array.isArray(uiKey) ? uiKey : [uiKey]).flatMap(k => bulkGetCheckedIds(k));
+                if (ids.length > 0) {
+                    const set = new Set(ids.map(String));
+                    data = data.filter(r => set.has(String(r.id)));
+                    picked = true;
+                }
+            }
             if (data.length === 0) { alert('내보낼 데이터가 없습니다.'); return; }
+            if (picked) filenamePrefix = filenamePrefix + '_선택' + data.length + '건';
+            if (typeof filterFn === 'function' && !picked && filenamePrefix === '참포스') filenamePrefix = '참포스_선택' + data.length + '건';
             const keySet = new Set();
             data.forEach(r => Object.keys(r).forEach(k => keySet.add(k)));
             const headers = Array.from(keySet);
@@ -3373,6 +3407,75 @@
             return '기타';
         };
 
+        // 참포스 백업 — 전체 / 버전별 / 선택분
+        window.posBackup = function(mode){
+            document.getElementById('pos-backup-menu')?.classList.add('hidden');
+            if(mode === 'checked'){
+                // 참포스 목록은 V2.0 / V1.0 두 테이블로 나뉘어 있어 양쪽 체크를 합친다.
+                const ids = ['pos_v2','pos_v1'].flatMap(k =>
+                    (typeof bulkGetCheckedIds === 'function') ? bulkGetCheckedIds(k) : []);
+                if(!ids.length){ alert('선택된 항목이 없습니다. 목록에서 체크한 뒤 다시 눌러 주세요.'); return; }
+                const set = new Set(ids.map(String));
+                return exportListToCSV(window.posList, '참포스', null, r => set.has(String(r.id)));
+            }
+            if(mode === 'all') return exportListToCSV(window.posList, '참포스');
+            const label = mode === 'V2.0' ? '참포스_V2.0_올댓페이' : '참포스_V1.0_크레소티';
+            exportListToCSV(window.posList, label, null, r => String(r.version||'') === mode);
+        };
+
+        // ── 미수금 정합성 탐지 ──
+        // 미수금은 두 가지로 구할 수 있다.
+        //   A) 가입금액 − 실입금   B) paymentRemain 필드에 저장된 값
+        // 둘이 어긋나면 어느 쪽이 맞는지 알 수 없으므로, 차이가 나는 건을 찾아 알린다.
+        // 실제 원인은 (1) paymentRemain 미입력 (2) 가입금액에 보증금만 입력 두 가지였다.
+        window.detectRemainMismatch = function(){
+            const num = v => parseFloat(v||0);
+            return (window.memberList||[]).filter(r=>{
+                if(r._deleted || r.payment !== '분납중') return false;
+                const calc = Math.max(0, num(r.joinFee) - window.computeJoinPaid(r));
+                return Math.abs(calc - num(r.paymentRemain)) > 0.5;
+            }).map(r=>{
+                const calc = Math.max(0, num(r.joinFee) - window.computeJoinPaid(r));
+                return { id:r.id, name:r.name, pharmacy:r.pharmacy, calc, saved:num(r.paymentRemain),
+                         hint: num(r.joinFee) <= 50 ? '가입금액에 보증금만 입력된 것으로 보임' : '미수금 값이 비어 있음' };
+            });
+        };
+
+        // ── 숫자 필드 오염 탐지 ──
+        // 금액 필드에 '전액' 같은 문자열이 들어가면 parseFloat 결과가 NaN 이 되고,
+        // 합계 전체가 NaN 으로 번져 화면에는 0(또는 —)으로만 보인다.
+        // 저장 시점에 막는 것이 원칙이지만, 과거 데이터를 위해 탐지 기능을 둔다.
+        window.NUMERIC_FIELDS = ['joinFee','joinPaid','joinDiscount','joinPoint','depositPaid','paymentRemain','size'];
+        window.detectNumericCorruption = function(){
+            const out = [];
+            (window.memberList||[]).forEach(r=>{
+                if(r._deleted) return;
+                window.NUMERIC_FIELDS.forEach(f=>{
+                    const v = r[f];
+                    if(v === undefined || v === null || v === '') return;
+                    if(isNaN(parseFloat(v))) out.push({ id:r.id, name:r.name, pharmacy:r.pharmacy, field:f, value:v });
+                });
+            });
+            return out;
+        };
+
+        // ── 면제 누락 탐지 ──
+        // 실입금이 0인데 납입상태를 '완납'으로 눌러 둔 건이 많다.
+        // (받을 돈을 다 처리했다는 뜻으로 쓰였지만, 시스템은 이를 매출로 본다)
+        // 메모에 회원비 전액 면제 근거가 있고 실입금이 보증금 수준 이하면 면제 누락으로 본다.
+        window.detectMissingExempt = function(){
+            const FULL = /(회원비|가입비|가맹비|회원가입비)[^가-힣]{0,4}(전액)(무상|무료|면제|할인)|(전액)(무상|무료|면제)[^가-힣]{0,3}(혜택|적용|진행|가입)?|(회원비|가입비|가맹비)[^가-힣]{0,4}(무료|면제)(?![^가-힣]{0,3}\d)|약국회원[^가-힣]{0,4}(무상|무료)가입/;
+            // 회원비가 아닌 다른 항목의 무상 지원은 제외한다
+            const FALSE_POSITIVE = /키오스크|입간판|세무사|POS|팜페이|A\/S|상품권|시트지|대분류|핏타민|보증금|상품/;
+            return (window.memberList||[]).filter(r=>{
+                if(r._deleted || r.payment === '면제') return false;
+                const t = `${r.exemptReason||''} ${r.joinDiscountMemo||''} ${r.memo||''}`.replace(/\s/g,'');
+                if(!FULL.test(t)) return false;
+                if(FALSE_POSITIVE.test((t.match(FULL)||[''])[0])) return false;
+                return window.computeJoinPaid(r) <= 50;   // 보증금(50만원) 수준 이하만
+            });
+        };
+
         // 확정 분류 우선, 없으면 추정값 사용
         window.getExemptCategory = function(r){
             const c = String(r.exemptCategory||'').trim();
@@ -3441,7 +3544,9 @@
 
         window.fmtAmt = function fmtAmt(n) {            if (!n && n !== 0) return '0만원';
             const num = Math.round(Number(n));
-            if (isNaN(num)) return '0만원';
+            // NaN 을 '0만원' 으로 조용히 바꾸면 데이터 오염(숫자 필드에 문자열)이 화면에서
+            // '0' 으로 보여 발견이 불가능해진다. 값이 이상하면 이상하다고 표시한다.
+            if (isNaN(num)) { console.warn('[fmtAmt] 숫자가 아닌 값:', n); return '—'; }
             if (num < 10000) return num.toLocaleString() + '만원';
             const uk  = Math.floor(num / 10000);
             const man = num % 10000;
@@ -4211,6 +4316,7 @@
             let activeCount=0;
             let totalFee=0,totalPaid=0,totalDiscount=0,totalPoint=0,totalRemain=0;
             let totalExempt=0, exemptCnt=0, exemptNbAmt=0, exemptNbCnt=0, exemptRbAmt=0, exemptRbCnt=0;
+            const negMargin=[];   // 포인트 지급액이 실입금을 넘어선 건 (건별 역마진)
             const exemptByCat={}; let exemptGuessed=0, exemptCondAmt=0, exemptUncondAmt=0;
             let exemptNoAmt=0, exemptNoAmtPharmacist=0;
             const today = new Date().toISOString().split('T')[0];
@@ -4231,6 +4337,7 @@
                 totalDiscount+=discount;
                 totalPoint+=point;
                 totalRemain+=remain;
+                if(point > paid) negMargin.push({ name:r.name, pharmacy:r.pharmacy, paid, point, diff: paid-point });
                 const exempt = window.computeExemptAmount(r);
                 if(exempt>0 || r.payment==='면제'){
                     totalExempt+=exempt; exemptCnt++;
@@ -4271,6 +4378,21 @@
                 <div class="bg-indigo-50 rounded-xl p-3 border border-indigo-100 text-center"><p class="text-[10px] text-indigo-500 font-bold">리본</p><p class="text-3xl font-black text-indigo-700">${nRibon}</p><p class="text-[10px] text-slate-400">${list.length>0?Math.round(nRibon/list.length*100):0}%</p></div>
                 <div class="bg-emerald-50 rounded-xl p-3 border border-emerald-100 text-center"><p class="text-[10px] text-emerald-500 font-bold">완납</p><p class="text-3xl font-black text-emerald-700">${list.filter(r=>r.payment==='완납').length}</p></div>
             </div>
+            ${(()=>{ const mm=(window.detectRemainMismatch?window.detectRemainMismatch():[]);
+                return mm.length ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
+                    <p class="text-[11px] font-bold text-amber-800"><i class="fa-solid fa-scale-unbalanced mr-1"></i>미수금 불일치 ${mm.length}건</p>
+                    <p class="text-[10px] text-amber-700 mt-1 leading-relaxed">「가입금액 − 실입금」과 저장된 미수금이 다릅니다.<br><span class="text-amber-600">${mm.slice(0,6).map(x=>`${x.name}/${x.pharmacy} · 계산 ${x.calc}만 vs 저장 ${x.saved}만 (${x.hint})`).join('<br>')}${mm.length>6?`<br>외 ${mm.length-6}건`:''}</span></p>
+                </div>` : ''; })()}
+            ${(()=>{ const bad=(window.detectNumericCorruption?window.detectNumericCorruption():[]);
+                return bad.length ? `<div class="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3">
+                    <p class="text-[11px] font-bold text-red-800"><i class="fa-solid fa-circle-exclamation mr-1"></i>금액 필드 오류 ${bad.length}건</p>
+                    <p class="text-[10px] text-red-700 mt-1 leading-relaxed">숫자여야 할 항목에 문자가 들어가 <b>합계가 계산되지 않습니다.</b> 해당 회원을 수정해 주세요.<br><span class="text-red-600">${bad.slice(0,6).map(b=>`${b.name}/${b.pharmacy} · ${b.field}="${b.value}"`).join(' · ')}${bad.length>6?` 외 ${bad.length-6}건`:''}</span></p>
+                </div>` : ''; })()}
+            ${(()=>{ const miss=(window.detectMissingExempt?window.detectMissingExempt():[]);
+                return miss.length ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
+                    <p class="text-[11px] font-bold text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>면제 누락 의심 ${miss.length}건</p>
+                    <p class="text-[10px] text-amber-700 mt-1 leading-relaxed">실입금이 0인데 납입상태가 「면제」가 아닙니다. 메모에 회원비 전액 면제 근거가 있어 면제 집계에서 빠져 있습니다.<br><span class="text-amber-600">${miss.slice(0,8).map(r=>`${r.name}/${r.pharmacy}`).join(' · ')}${miss.length>8?` 외 ${miss.length-8}건`:''}</span></p>
+                </div>` : ''; })()}
             ${exemptCnt>0?`
             <div class="bg-purple-50 rounded-xl p-3 border border-purple-100 mb-4">
                 <p class="text-xs font-bold text-purple-700 mb-2"><i class="fa-solid fa-gift mr-1"></i>가입비 면제 현황
@@ -4326,6 +4448,7 @@
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold text-blue-700">실마진 <span class="text-slate-400 font-normal">(실입금 − 포인트)</span></p>
                         <p class="text-[9px] text-slate-400 leading-tight">가맹비 할인 누적 ${window.fmtAmt(totalDiscount)} · 가입금액에 이미 반영</p>
+                        ${negMargin.length?`<p class="text-[9px] text-rose-500 leading-tight mt-0.5"><i class="fa-solid fa-arrow-trend-down mr-0.5"></i>포인트가 실입금을 넘어선 건 ${negMargin.length}건 · ${window.fmtAmt(Math.abs(negMargin.reduce((s,x)=>s+x.diff,0)))} 역마진</p>`:''}
                     </div>
                     <p class="text-base font-black text-blue-700 flex-shrink-0 text-right sm:text-left">${window.fmtAmt(totalPaid-totalPoint)}</p>
                 </div>
@@ -5614,6 +5737,11 @@
             renderPosMonthly();
         }
         window.togglePosMonthRowExclude = togglePosMonthRowExclude;
+        // 제외 상태가 바뀌면 확인 체크박스의 disabled 대상이 달라지므로 헤더를 다시 맞춘다.
+        (function(){
+            const orig = window.togglePosMonthRowExclude;
+            window.togglePosMonthRowExclude = function(el){ orig(el); window.syncPosMonthConfHeader && window.syncPosMonthConfHeader(); };
+        })();
 
         // 전체 선택/해제: 헤더의 "포함" 체크박스로 전체 행을 한 번에 토글
         function togglePosMonthSelectAll(checkboxEl) {
@@ -5654,6 +5782,31 @@
         }
         window.savePosMonth = savePosMonth;
 
+        // 입금확인 / 정산확인 일괄 체크
+        // 제외(체크 해제)된 행은 disabled 이므로 건드리지 않는다.
+        window.togglePosMonthConfAll = function(kind, el){
+            const sel = kind === 'fee' ? '.pmf-fee-conf' : '.pmf-sett-conf';
+            const tbody = document.getElementById('pos-month-table-body');
+            if(!tbody) return;
+            const boxes = Array.from(tbody.querySelectorAll(sel)).filter(cb => !cb.disabled);
+            if(!boxes.length){ el.checked = false; return; }
+            boxes.forEach(cb => { cb.checked = el.checked; });
+            el.indeterminate = false;
+        };
+        // 개별 체크 상태에 따라 헤더 체크박스를 전체/부분/해제로 맞춘다.
+        window.syncPosMonthConfHeader = function(){
+            const tbody = document.getElementById('pos-month-table-body');
+            if(!tbody) return;
+            [['fee','.pmf-fee-conf','pmf-fee-conf-all'],['sett','.pmf-sett-conf','pmf-sett-conf-all']]
+            .forEach(([,sel,id])=>{
+                const el = document.getElementById(id); if(!el) return;
+                const boxes = Array.from(tbody.querySelectorAll(sel)).filter(cb => !cb.disabled);
+                const on = boxes.filter(cb => cb.checked).length;
+                el.checked = boxes.length > 0 && on === boxes.length;
+                el.indeterminate = on > 0 && on < boxes.length;
+            });
+        };
+
         window.renderPosMonthly = function() {
             const label = document.getElementById('pos-month-label');
             if (!label) return; // POS 탭이 아직 렌더되지 않음
@@ -5675,9 +5828,9 @@
                         <td class="p-2 font-bold whitespace-nowrap">${r.pharmacy||'-'}</td>
                         <td class="p-2 whitespace-nowrap">${r.name||'-'}</td>
                         <td class="p-2 text-right"><input type="number" class="pmf-fee w-20 border rounded p-1 text-xs text-right" value="${e.fee||''}" ${excluded?'disabled':''}></td>
-                        <td class="p-2 text-center"><input type="checkbox" class="pmf-fee-conf w-4 h-4" ${e.feeConfirmed?'checked':''} ${excluded?'disabled':''}></td>
+                        <td class="p-2 text-center"><input type="checkbox" class="pmf-fee-conf w-4 h-4" ${e.feeConfirmed?'checked':''} ${excluded?'disabled':''} onchange="syncPosMonthConfHeader()"></td>
                         <td class="p-2 text-right"><input type="number" class="pmf-sett w-20 border rounded p-1 text-xs text-right" value="${e.settlement||''}" ${excluded?'disabled':''}></td>
-                        <td class="p-2 text-center"><input type="checkbox" class="pmf-sett-conf w-4 h-4" ${e.settlementConfirmed?'checked':''} ${excluded?'disabled':''}></td>
+                        <td class="p-2 text-center"><input type="checkbox" class="pmf-sett-conf w-4 h-4" ${e.settlementConfirmed?'checked':''} ${excluded?'disabled':''} onchange="syncPosMonthConfHeader()"></td>
                     </tr>`;
                 }).join('');
             }
@@ -5699,6 +5852,7 @@
                 <div class="bg-white rounded-lg p-2 border border-indigo-100"><p class="text-[9px] text-indigo-400 font-bold">월 매출 합계</p><p class="font-black text-blue-700">${window.fmtAmt(totalFee)}</p></div>
                 <div class="bg-white rounded-lg p-2 border border-indigo-100"><p class="text-[9px] text-indigo-400 font-bold">정산확인</p><p class="font-black text-orange-600">${confirmedSettCnt}/${includedIds.length}건 · ${window.fmtAmt(totalSett)}</p></div>
             `;
+            window.syncPosMonthConfHeader();
         };
         function showPosDashboard() {
             const list    = (window.posList||[]).filter(r => !r._deleted);
