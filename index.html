@@ -73,6 +73,11 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.11.3 체크박스 클릭 영역을 셀 전체로 확장(살짝 빗나가도 선택되고 보기 모달이
+                 뜨지 않음), 참포스 백업 메뉴의 마지막 항목을 선택 여부에 따라
+                 「전체 내려받기」/「선택 내려받기」로 전환
+         14.11.2 참포스 백업 메뉴 — 선택 시 마지막 줄이 '선택 내려받기 N건'으로 전환,
+                 버튼 뱃지 제거. 체크박스 셀 전체를 클릭 영역으로 넓혀 오클릭 방지
          14.11.1 참포스 백업 메뉴 개편 — 헤더·항목별 건수·구분선으로 가독성 개선,
                  백업 버튼에 선택 건수 뱃지 표시(드롭다운 없는 탭도 선택 상태 인지 가능)
          14.11.0 백업 시 선택분/전체 확인 팝업 추가(체크 사실을 모르고 받는 것 방지),
@@ -148,7 +153,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.11.1';</script>
+    <script>window.APP_VERSION = '14.11.3';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1323,7 +1328,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.11.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.11.3</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -2023,7 +2028,7 @@
                     </button>
                     <input type="file" id="pos-upload-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadPosListExcel(this)">
                     <button onclick="toggleBackupMenu('pos-backup-menu', this)" class="backup-menu-btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
-                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">참포스 백업</span><span id="backup-badge-pos" class="hidden ml-1 bg-blue-500 text-white text-[9px] font-black rounded-full px-1.5 py-0.5"></span><i class="fa-solid fa-caret-down ml-1"></i>
+                        <i class="fa-solid fa-file-excel mr-1"></i><span class="text-[9px] sm:text-xs">참포스 백업</span><i class="fa-solid fa-caret-down ml-1"></i>
                     </button>
                     <button onclick="openPosModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg whitespace-nowrap flex-shrink-0">
                         <i class="fa-solid fa-plus mr-1"></i> 신규 등록
@@ -3432,8 +3437,16 @@
         // 참포스 백업 — 버전별(V2.0/V1.0) 또는 전체
         window.posBackup = function(mode){
             document.getElementById('pos-backup-menu')?.classList.add('hidden');
-            if(mode === 'all')
-                return window.backupWithSelection(window.posList, '참포스', ['pos_v2','pos_v1']);
+            if(mode === 'all'){
+                // 메뉴에 '선택 내려받기'로 표시된 상태에서 누른 것이므로 재확인 팝업을 띄우지 않는다.
+                const ids = (typeof bulkGetCheckedIds==='function')
+                    ? ['pos_v2','pos_v1'].flatMap(k=>bulkGetCheckedIds(k)) : [];
+                if(ids.length){
+                    const set = new Set(ids.map(String));
+                    return exportListToCSV(window.posList, `참포스_선택${ids.length}건`, null, r => set.has(String(r.id)));
+                }
+                return exportListToCSV(window.posList, '참포스');
+            }
             const label = mode === 'V2.0' ? '참포스_V2.0_올댓페이' : '참포스_V1.0_크레소티';
             const key   = mode === 'V2.0' ? 'pos_v2' : 'pos_v1';
             return window.backupWithSelection(window.posList, label, [key], r => String(r.version||'') === mode);
@@ -3453,10 +3466,26 @@
                 const v1 = pos.filter(r=>String(r.version||'')==='V1.0').length;
                 const set = (id,v)=>{ const el=document.getElementById(id); if(el) el.textContent = v.toLocaleString()+'건'; };
                 set('pos-cnt-v2', v2); set('pos-cnt-v1', v1); set('pos-cnt-all', pos.length);
+                // 선택한 항목이 있으면 마지막 줄을 '선택 내려받기'로 바꾼다.
+                // 전체 건수를 선택 건수로 덮어쓰지 않고, 무엇을 받는지 라벨로 명확히 구분한다.
                 const n = (typeof bulkGetCheckedIds==='function')
                     ? bulkGetCheckedIds('pos_v2').length + bulkGetCheckedIds('pos_v1').length : 0;
-                const sel = document.getElementById('pos-menu-sel');
-                if(sel){ sel.textContent = `선택 ${n}건`; sel.classList.toggle('hidden', !n); }
+                const lbl=document.getElementById('pos-lbl-all'), cntAll=document.getElementById('pos-cnt-all'), btnAll=document.getElementById('pos-btn-all');
+                if(lbl && cntAll && btnAll){
+                    if(n){
+                        lbl.textContent='선택 내려받기';
+                        lbl.className='text-xs font-black text-blue-700';
+                        cntAll.textContent=n.toLocaleString()+'건';
+                        cntAll.className='text-[11px] font-black text-blue-600';
+                        btnAll.className='w-full flex items-center justify-between px-3 py-2.5 bg-blue-50 hover:bg-blue-100 group';
+                    } else {
+                        lbl.textContent='전체 내려받기';
+                        lbl.className='text-xs font-bold text-slate-700';
+                        cntAll.textContent=pos.length.toLocaleString()+'건';
+                        cntAll.className='text-[11px] font-black text-slate-500 group-hover:text-emerald-600';
+                        btnAll.className='w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-emerald-50 group';
+                    }
+                }
             }
             const r = btn.getBoundingClientRect();
             const W = 240;
@@ -5367,8 +5396,16 @@
             pos_v1: { listKey: 'posList', showDeletedKey: '_showDeletedPos', saveFn: 'savePosList', renderFn: 'renderPos', tbodyId: 'pos-v1-table-body', label: '참포스' },
         };
 
+        // 체크박스를 label 로 감싸 셀 전체가 클릭 영역이 되게 한다.
+        // 체크박스 자체 크기는 그대로 두고 주변 여백까지 눌리도록 하여,
+        // 살짝 빗나가도 선택되고 보기 모달이 열리지 않는다.
+        // 체크박스 셀은 '선택 전용' 영역이다.
+        // 버튼 크기는 그대로 두되 클릭 판정만 셀 전체로 넓혀,
+        // 살짝 빗나가도 선택이 되고 실수로 보기 모달이 뜨지 않게 한다.
         function bulkRowCheckboxHtml(uiKey, id) {
-            return `<input type="checkbox" class="row-check w-4 h-4 cursor-pointer" data-id="${id}" onchange="bulkOnRowToggle('${uiKey}', this)">`;
+            return `<label class="row-check-cell absolute inset-0 flex items-center justify-center cursor-pointer">`
+                 + `<input type="checkbox" class="row-check w-4 h-4 cursor-pointer pointer-events-none" data-id="${id}" onchange="bulkOnRowToggle('${uiKey}', this)">`
+                 + `</label>`;
         }
         window.bulkRowCheckboxHtml = bulkRowCheckboxHtml;
 
@@ -5405,13 +5442,7 @@
                 el.textContent = n ? `(${n})` : '';
                 el.classList.toggle('hidden', !n);
             });
-            const posEl = document.getElementById('backup-badge-pos');
-            if(posEl){
-                // 참포스는 V2.0 / V1.0 두 테이블의 체크를 합산한다
-                const n = count('pos_v2') + count('pos_v1');
-                posEl.textContent = n ? `(${n})` : '';
-                posEl.classList.toggle('hidden', !n);
-            }
+            // 참포스는 드롭다운 안에서 '선택 내려받기 N건'으로 보여주므로 버튼 뱃지를 쓰지 않는다.
         };
         // 탭을 옮기면 이전 탭의 체크는 화면에서 사라지므로 뱃지도 초기화한다
         window.addEventListener('load', () => setTimeout(()=>window.updateBackupBadge&&window.updateBackupBadge(), 800));
@@ -5608,7 +5639,7 @@
                 tbody.innerHTML = paged.length === 0
                     ? `<tr><td colspan="11" class="text-center py-6 text-slate-400 text-sm">데이터가 없습니다</td></tr>`
                     : paged.map(r => { const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr data-view-type="pos" data-view-id="${r.id}" class="cursor-pointer ${r._deleted?'opacity-50 bg-red-50/30':'hover:bg-blue-50/30'}">
-                        <td class="p-3 text-center whitespace-nowrap">${bulkRowCheckboxHtml(uiKey, r.id)}</td>
+                        <td class="p-3 text-center whitespace-nowrap row-check-cell relative">${bulkRowCheckboxHtml(uiKey, r.id)}</td>
                         <td data-label="가입일(설치일)" class="p-3 text-[11px] whitespace-nowrap">${r.date||'-'}</td>
                         <td data-label="약사명" class="p-3 font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
                         <td data-label="약국명" class="p-3 max-w-[160px] truncate" title="${r.pharmacy||''}">${r.pharmacy||'-'}</td>
@@ -6298,7 +6329,7 @@
             tbody.innerHTML = paged.length===0
                 ? `<tr><td colspan="12" class="text-center py-8 text-slate-400 text-sm">${window._showDeletedConsults ? '삭제된 항목이 없습니다' : '등록된 상담 내역이 없습니다'}</td></tr>`
                 : paged.map(r=>{ const rowBg = r._deleted ? 'bg-red-50' : 'bg-white'; return `<tr data-view-type="consult" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
-                <td class="p-3 text-center whitespace-nowrap">${bulkRowCheckboxHtml('consult', r.id)}</td>
+                <td class="p-3 text-center whitespace-nowrap row-check-cell relative">${bulkRowCheckboxHtml('consult', r.id)}</td>
                 <td data-label="상담일" class="p-3 text-[11px] whitespace-nowrap">${r.date||'-'}</td>
                 <td data-label="이름" class="p-3 font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
                 <td data-label="연락처" class="p-3 text-[11px] whitespace-nowrap">${r.phone||'-'}</td>
@@ -6500,7 +6531,7 @@
                     || (window.parseBranchFromAddress ? (window.parseBranchFromAddress(r.address||'') || '') : '')
                     || '-';
                 return `<tr data-view-type="member" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'}">
-                <td class="px-2 py-2 text-center">${bulkRowCheckboxHtml('member', r.id)}</td>
+                <td class="px-2 py-2 text-center row-check-cell relative">${bulkRowCheckboxHtml('member', r.id)}</td>
                 <td data-label="가입일" class="px-2 py-2 text-[10px] whitespace-nowrap">${r.date||'-'}</td>
                 <td data-label="약사명" class="px-2 py-2 text-[12px] font-bold whitespace-nowrap">${r.name||'-'}${r._deleted?'<span class="ml-1 text-[9px] bg-red-100 text-red-500 px-1 py-0.5 rounded">삭제됨</span>':''}</td>
                 <td data-label="약국명" class="px-2 py-2 max-w-[110px] truncate text-[11px]" title="${r.pharmacy||''}">${r.pharmacy||'-'}</td>
@@ -7128,7 +7159,8 @@
             document.addEventListener('click', function(e){
                 const tr = e.target.closest('[data-view-type][data-view-id]');
                 if(!tr) return;
-                if(e.target.closest('button, a, input, select, textarea, label')) return;
+                // 체크박스 셀(라벨 포함)은 선택 전용 영역이므로 보기 모달을 열지 않는다.
+                if(e.target.closest('button, a, input, select, textarea, label, .row-check-cell')) return;
                 window.openViewModal(tr.getAttribute('data-view-type'), tr.getAttribute('data-view-id'));
             });
         })();
@@ -10392,9 +10424,8 @@
     </script>
     <!-- 백업 드롭다운 메뉴 — 상위 요소의 overflow 에 잘리지 않도록 body 직속 fixed 로 둔다 -->
     <div id="pos-backup-menu" class="backup-menu hidden fixed w-60 bg-white border-2 border-slate-300 rounded-xl shadow-2xl z-[95] overflow-hidden">
-        <div class="flex items-center justify-between px-3 py-2 bg-slate-800 text-white">
+        <div class="px-3 py-2 bg-slate-800 text-white">
             <span class="text-[11px] font-black"><i class="fa-solid fa-file-excel mr-1.5 text-emerald-400"></i>참포스 백업</span>
-            <span id="pos-menu-sel" class="hidden text-[10px] font-bold bg-blue-500 text-white rounded-full px-2 py-0.5"></span>
         </div>
         <button onclick="posBackup('V2.0')" class="w-full flex items-center justify-between px-3 py-2.5 hover:bg-emerald-50 border-b group">
             <span class="text-xs font-bold text-slate-700">V2.0 올댓페이</span>
@@ -10404,8 +10435,8 @@
             <span class="text-xs font-bold text-slate-700">V1.0 크레소티</span>
             <span class="text-[11px] font-black text-slate-400 group-hover:text-emerald-600" id="pos-cnt-v1">-</span>
         </button>
-        <button onclick="posBackup('all')" class="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-emerald-50 group">
-            <span class="text-xs font-bold text-slate-700">전체 내려받기</span>
+        <button onclick="posBackup('all')" id="pos-btn-all" class="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-emerald-50 group">
+            <span class="text-xs font-bold text-slate-700" id="pos-lbl-all">전체 내려받기</span>
             <span class="text-[11px] font-black text-slate-500 group-hover:text-emerald-600" id="pos-cnt-all">-</span>
         </button>
     </div>
