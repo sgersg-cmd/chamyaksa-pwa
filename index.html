@@ -73,6 +73,7 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.13.1 삭제된 약국을 가리키는 공유링크 접속 시 빈 화면 대신 만료 안내 표시
          14.13.0 약국 평형 분포(가입자관리) 및 평형별 인테리어 평당 단가(매출관리) 추가,
                  인테리어에 공사 범위 필드 신설 — 전체 시공만 평당 단가에 집계
          14.12.0 [긴급] 약사 페이지에서 자료요청·상태변경·비고입력이 저장되지 않던 문제 수정 —
@@ -159,7 +160,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.13.0';</script>
+    <script>window.APP_VERSION = '14.13.1';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -307,10 +308,34 @@
         // 브라우저 콘솔에서 window.masterPharmacies 만 쳐도 전체 약국 정보가 보였음.
         // 메모리에 올릴 때 본인 약국 1건만 남겨 노출 범위를 축소한다.
         // (근본 해결은 master/timeline의 서브컬렉션 분리 — 개발자 협의 항목)
+        // 링크는 살아 있지만 해당 약국이 개설행정에서 삭제된 경우가 있다.
+        // 이때 그냥 두면 약국명·담당자가 모두 빈 화면이 떠서 약사님은
+        // 시스템 오류로 오해하게 되므로, 만료 안내를 명확히 보여준다.
+        function showExpiredLinkNotice(){
+            if(window._expiredShown) return;
+            window._expiredShown = true;
+            document.body.innerHTML =
+              '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;'
+            + 'background:#0f172a;color:#fff;flex-direction:column;gap:14px;padding:24px;text-align:center;'
+            + 'font-family:-apple-system,BlinkMacSystemFont,\'Malgun Gothic\',sans-serif">'
+            + '<div style="font-size:48px">📄</div>'
+            + '<div style="font-size:20px;font-weight:800">만료된 링크입니다</div>'
+            + '<div style="font-size:14px;color:#94a3b8;line-height:1.7;max-width:420px">'
+            +   '약국 개설행정이 마무리되었거나 정보가 변경되어<br>더 이상 조회할 수 없는 링크입니다.<br>'
+            +   '새 링크가 필요하시면 담당자에게 요청해 주세요.</div>'
+            + '<div style="margin-top:8px;padding:14px 18px;background:#1e293b;border-radius:12px;'
+            +   'font-size:13px;color:#cbd5e1;line-height:1.8">'
+            +   '<div style="font-weight:700;color:#fff;margin-bottom:4px">참약사 가맹기획팀</div>'
+            +   '약국총괄사업부</div>'
+            + '</div>';
+        }
         function scopeMasterForShared(list){
             const pid = window._resolvedPharmacyId;
             if(!pid) return list;                       // 관리자 화면은 전체 유지
-            return (list||[]).filter(x=>String(x.id)===String(pid));
+            const mine = (list||[]).filter(x=>String(x.id)===String(pid));
+            // 데이터가 도착했는데 내 약국이 없다 → 삭제된 약국을 가리키는 링크
+            if((list||[]).length > 0 && mine.length === 0){ showExpiredLinkNotice(); return []; }
+            return mine;
         }
         function scopeTimelineForShared(map){
             const pid = window._resolvedPharmacyId;
@@ -1336,7 +1361,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.13.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.13.1</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
