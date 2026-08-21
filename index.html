@@ -73,6 +73,8 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.14.0 약국 삭제 시 발급된 공유링크도 함께 정리 — 고아 링크 누적 방지,
+                 기존 고아 링크 일괄 정리 함수(cleanupOrphanLinks) 추가
          14.13.1 삭제된 약국을 가리키는 공유링크 접속 시 빈 화면 대신 만료 안내 표시
          14.13.0 약국 평형 분포(가입자관리) 및 평형별 인테리어 평당 단가(매출관리) 추가,
                  인테리어에 공사 범위 필드 신설 — 전체 시공만 평당 단가에 집계
@@ -160,7 +162,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.13.1';</script>
+    <script>window.APP_VERSION = '14.14.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1361,7 +1363,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.13.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.14.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -10454,8 +10456,8 @@
         function openModal() { document.getElementById('register-modal').style.display='flex'; window.lockBodyScroll(); window.pushModalNav(); }
         function closeModal() { document.getElementById('register-modal').style.display='none'; window.unlockBodyScroll(); window.popModalNav(); }
 
-        function deletePharmacy(id) {
-            if (!confirm('리스트에서 삭제하시겠습니까?\n\n※ 데이터는 Firebase에 보존되며 언제든 복구 가능합니다.')) return;
+        async function deletePharmacy(id) {
+            if (!confirm('리스트에서 삭제하시겠습니까?\n\n※ 약국 데이터는 Firebase에 보존되며 복구 가능합니다.\n※ 발급된 약사 공유링크는 함께 삭제되며, 복구 시 새 링크를 발급해야 합니다.')) return;
             const p = masterPharmacies.find(x => x.id === id);
             if (!p) return;
             p._deleted = true;
@@ -10463,7 +10465,42 @@
             save();
             if (activeId === id) activeId = null;
             refresh();
+            // 공유링크 정리 — 링크만 남으면 접속 시 정체불명의 만료 화면이 되고,
+            // 관리자 목록에도 죽은 링크가 쌓이므로 약국 삭제와 함께 지운다.
+            const n = await window.deleteSharedLinks(id);
+            if (n > 0) console.log(`[deletePharmacy] 공유링크 ${n}건 정리됨 (약국 ${id})`);
         }
+        // 특정 약국의 공유링크 문서를 모두 삭제하고 삭제 건수를 돌려준다.
+        window.deleteSharedLinks = async function(pharmacyId){
+            try {
+                const { collection:_coll, getDocs:_get, doc:_doc, deleteDoc:_del } =
+                    await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+                const snap = await _get(_coll(window._db, 'chamyaksa_links'));
+                const targets = [];
+                snap.forEach(d => {
+                    const v = d.data() || {};
+                    if (String(v.pharmacyId ?? v.id ?? '') === String(pharmacyId)) targets.push(d.id);
+                });
+                for (const uuid of targets) await _del(_doc(window._db, 'chamyaksa_links', uuid));
+                return targets.length;
+            } catch(e){ console.error('[deleteSharedLinks]', e); return 0; }
+        };
+        // 이미 삭제된 약국을 가리키는 고아 링크를 한 번에 정리한다. (관리자 콘솔용)
+        window.cleanupOrphanLinks = async function(dryRun){
+            const { collection:_coll, getDocs:_get, doc:_doc, deleteDoc:_del } =
+                await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+            const alive = new Set((window.masterPharmacies||[]).filter(p=>!p._deleted).map(p=>String(p.id)));
+            const snap = await _get(_coll(window._db, 'chamyaksa_links'));
+            const orphans = [];
+            snap.forEach(d => {
+                const v = d.data() || {};
+                const pid = String(v.pharmacyId ?? v.id ?? '');
+                if (!alive.has(pid)) orphans.push({ uuid: d.id, pharmacyId: pid });
+            });
+            if (dryRun) return { 정리대상: orphans.length, 목록: orphans };
+            for (const o of orphans) await _del(_doc(window._db, 'chamyaksa_links', o.uuid));
+            return { 삭제완료: orphans.length };
+        };
     </script>
     <script>
         // ── [모바일 안정화 #5 - 수정판] 서비스워커 갱신: 조용히, 안전할 때만 새로고침 ──
