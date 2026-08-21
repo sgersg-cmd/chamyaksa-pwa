@@ -73,6 +73,8 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.14.1 월별 운영 약국 변동 블록과 다음 섹션이 붙어 보이던 간격 조정,
+                 종료일 안내 박스 여백 확대
          14.14.0 약국 삭제 시 발급된 공유링크도 함께 정리 — 고아 링크 누적 방지,
                  기존 고아 링크 일괄 정리 함수(cleanupOrphanLinks) 추가
          14.13.1 삭제된 약국을 가리키는 공유링크 접속 시 빈 화면 대신 만료 안내 표시
@@ -162,7 +164,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.14.0';</script>
+    <script>window.APP_VERSION = '14.14.1';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1363,7 +1365,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.14.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.14.1</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -4407,11 +4409,11 @@
                         <td class="${td} text-slate-900">${R.endOf[sM[sM.length-1]]}</td>
                     </tr></tbody></table></div>`;
             }
-            return `<div class="mt-4"><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-right-left text-emerald-600 mr-1"></i>월별 운영 약국 변동 <span class="text-[10px] text-slate-400 font-normal">(현재 ${R.openNow}곳)</span></p>
+            return `<div class="mt-4 mb-5"><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-right-left text-emerald-600 mr-1"></i>월별 운영 약국 변동 <span class="text-[10px] text-slate-400 font-normal">(현재 ${R.openNow}곳)</span></p>
                 ${body}
                 <p class="text-[9px] text-slate-400 mt-1.5">※ 운영 약국 = 활성 회원 중 실제 약국을 운영 중인 곳 (약국명 미정·약사회원 제외).<br>※ 순증감 = 신규 개설 + 재개설 − (폐업 + 양도양수 + 탈퇴). <b>약국 이전은 운영 약국 수가 변하지 않으므로 순증감에서 제외</b>됩니다.<br>※ 개설·재개설·이전은 <b>개국일</b>, 종료는 <b>실제 종료일</b> 기준입니다. 개국일이 비어 있으면 가입일로 대체됩니다.<br>※ 개국 예정일이 미래인 곳은 「예정」으로 표시되며 현재 운영 약국 수에는 포함되지 않습니다.</p>
-                ${R.noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${R.noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
-                ${R.unknownEnd>0?`<p class="text-[10px] text-slate-500 bg-slate-50 border rounded-lg p-2 mt-1.5 leading-relaxed"><i class="fa-solid fa-circle-question mr-1"></i><b>종료일 확인 불가 ${R.unknownEnd}건</b>은 자료가 남아 있지 않아 월별 집계에서 제외됩니다. 현재 운영 약국 수에는 영향이 없습니다.</p>`:''}
+                ${R.noEndDate>0?`<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-2.5 leading-relaxed"><i class="fa-solid fa-triangle-exclamation mr-1"></i><b>종료일 미입력 ${R.noEndDate}건</b>이 집계에서 빠져 있습니다. 아카이브 회원의 실제 종료일을 입력하면 과거 월까지 반영됩니다.</p>`:''}
+                ${R.unknownEnd>0?`<p class="text-[10px] text-slate-500 bg-slate-50 border rounded-lg p-2.5 mt-2.5 leading-relaxed"><i class="fa-solid fa-circle-question mr-1"></i><b>종료일 확인 불가 ${R.unknownEnd}건</b>은 자료가 남아 있지 않아 월별 집계에서 제외됩니다. 현재 운영 약국 수에는 영향이 없습니다.</p>`:''}
             </div>`;
         };
 
