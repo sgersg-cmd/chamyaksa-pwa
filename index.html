@@ -73,6 +73,7 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.15.0 개국 기념일 명단에 지점명·오픈일 추가 — 엑셀과 화면 모두 반영
          14.14.1 월별 운영 약국 변동 블록과 다음 섹션이 붙어 보이던 간격 조정,
                  종료일 안내 박스 여백 확대
          14.14.0 약국 삭제 시 발급된 공유링크도 함께 정리 — 고아 링크 누적 방지,
@@ -164,7 +165,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.14.1';</script>
+    <script>window.APP_VERSION = '14.15.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1365,7 +1366,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.14.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.15.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -5222,6 +5223,10 @@
                 }
                 rows.push({
                     pharmacy,
+                    // 지점명은 저장된 값이 있으면 그대로, 없으면 주소에서 산출한다.
+                    // (명단은 주소가 필수값이라 대부분 산출 가능)
+                    branch: (r.branch||'').trim()
+                            || (window.parseBranchFromAddress ? (window.parseBranchFromAddress(addr)||'') : ''),
                     name: (r.name||'').trim(),
                     openDate: open,
                     years: year - ym.y,
@@ -5296,11 +5301,11 @@
                    </div>`
                 : `<div class="overflow-x-auto no-scrollbar"><table class="w-full text-xs border-collapse anniv-table">
                     <thead><tr class="bg-slate-50 border-b text-[10px] text-slate-500 font-bold">
-                        <th class="px-1.5 py-2 text-left w-7">#</th><th class="px-1.5 py-2 text-left">약국명</th><th class="px-1.5 py-2 text-left w-16 sm:w-24">약사명</th><th class="px-1.5 py-2 text-center w-16 sm:w-20">연차</th>
+                        <th class="px-1.5 py-2 text-left w-7">#</th><th class="px-1.5 py-2 text-left">약국명 <span class="font-normal text-slate-400">· 지점명</span></th><th class="px-1.5 py-2 text-left w-16 sm:w-24">약사명</th><th class="px-1.5 py-2 text-center w-16 sm:w-20">연차</th>
                     </tr></thead>
                     <tbody class="divide-y">${rows.map((r,i)=>`<tr class="hover:bg-slate-50">
                         <td class="px-1.5 py-2 text-slate-300">${i+1}</td>
-                        <td class="px-1.5 py-2 font-bold text-slate-700">${r.pharmacy}</td>
+                        <td class="px-1.5 py-2 font-bold text-slate-700">${r.pharmacy}${r.branch?`<span class="block text-[10px] text-slate-400 font-normal">${r.branch}</span>`:''}</td>
                         <td class="px-1.5 py-2 text-slate-600">${r.name||'-'}</td>
                         <td class="px-1.5 py-2 text-center"><span class="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-1.5 py-0.5 font-bold whitespace-nowrap">${r.years}주년</span></td>
                     </tr>`).join('')}</tbody>
@@ -5320,8 +5325,8 @@
             if(!rows.length){ alert('다운로드할 명단이 없습니다.'); return; }
             window.downloadCSV(
                 `개국기념일_${y}년${String(m).padStart(2,'0')}월_${rows.length}곳.csv`,
-                ['No','약국명','약사명','연차'],
-                rows.map((r,i)=>[i+1, r.pharmacy, r.name, r.years+'주년'])
+                ['No','약국명','지점명','약사명','오픈일','연차'],
+                rows.map((r,i)=>[i+1, r.pharmacy, r.branch||'', r.name, r.openDate||'', r.years+'주년'])
             );
         };
 
