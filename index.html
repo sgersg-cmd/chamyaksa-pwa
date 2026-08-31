@@ -73,6 +73,8 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.17.2 안내완료 체크가 한 번씩 되돌아가던 문제 수정 — 저장 순서 정정 및
+                 오버레이 캐시 선반영, 관리자 수정 시 해당 단계 오버레이 정리
          14.17.1 약사 페이지는 컬렉션 목록 조회 권한이 없으므로 자기 약국 문서만 건별 구독하도록 변경
          14.17.0 [중요] 약사 페이지 변경이 관리자 화면에 반영되지 않던 문제 수정 —
                  timeline 갱신 시 병합분이 지워지던 것을 오버레이 캐시로 해결,
@@ -174,7 +176,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.17.1';</script>
+    <script>window.APP_VERSION = '14.17.2';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1377,7 +1379,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.17.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.17.2</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -10105,7 +10107,24 @@
         // 관리자 화면은 기존대로 timeline 문서에 저장하고,
         // 약사 페이지는 전체를 덮어쓸 수 없으므로 step_updates 컬렉션에 건별로 기록한다.
         window.saveStepChange = async function(pharmacyId, step, patch){
-            if (!window._resolvedPharmacyId) { save(); return true; }   // 관리자: 기존 경로
+            if (!window._resolvedPharmacyId) {
+                // ── 관리자 ──
+                // timeline 문서가 정본이므로 그대로 저장한다.
+                // 다만 같은 단계에 약사님이 남긴 오버레이가 있으면, timeline 스냅샷이
+                // 돌아올 때 그 옛 값이 다시 덧씌워져 방금 바꾼 내용이 되돌아간다.
+                // 그래서 관리자가 수정한 단계의 오버레이는 걷어내고 원본 문서도 지운다.
+                const okey = `${pharmacyId}_${step}`;
+                if (window._stepOverlay?.updates?.[okey]) {
+                    delete window._stepOverlay.updates[okey];
+                    try {
+                        const { doc:_doc, deleteDoc:_del } =
+                            await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+                        await _del(_doc(window._db, 'step_updates', okey));
+                    } catch(e) { console.error('[saveStepChange] 오버레이 정리 실패', e); }
+                }
+                save();
+                return true;
+            }
             try {
                 const { doc:_doc, setDoc:_setDoc } =
                     await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
@@ -10201,19 +10220,37 @@
             const tl = timelineMap[pharmacyId];
             if (!tl) return;
             const idx = tl.findIndex(t => t.step === step);
-            if (idx > -1) {
-                tl[idx].requestHandled = true;
-                tl[idx].requestHandledAt = new Date().toISOString();
-                save();
-                // 요청 문서에도 반영 — 하지 않으면 약사 화면에는 계속 '요청 중'으로 남는다
-                try {
-                    const { doc:_doc, setDoc:_setDoc } =
-                        await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
-                    await _setDoc(_doc(window._db, 'step_requests', `${pharmacyId}_${step}`),
-                        { requestHandled: true, requestHandledAt: tl[idx].requestHandledAt }, { merge: true });
-                } catch(e) { console.error('[markRequestHandled]', e); }
+            if (idx < 0) return;
+            const at = new Date().toISOString();
+            tl[idx].requestHandled = true;
+            tl[idx].requestHandledAt = at;
+
+            // [중요] 오버레이 캐시를 먼저 갱신한다.
+            // save() 가 timeline 문서를 쓰면 그 스냅샷이 돌아오면서 timelineMap 이 통째로
+            // 교체되고 applyStepOverlay() 가 다시 덧씌워진다. 이때 캐시가 옛 값
+            // (requestHandled:false)이면 방금 누른 완료 처리가 곧바로 되돌아간다.
+            // step_requests 스냅샷이 도착하기 전까지의 이 짧은 틈이 '한 번씩 리셋되는' 원인이었다.
+            const okey = `${pharmacyId}_${step}`;
+            const prev = window._stepOverlay?.requests?.[okey];
+            if (prev) { prev.requestHandled = true; prev.requestHandledAt = at; }
+
+            // 요청 문서에도 반영 — 하지 않으면 약사 화면에는 계속 '요청 중'으로 남는다
+            try {
+                const { doc:_doc, setDoc:_setDoc } =
+                    await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+                await _setDoc(_doc(window._db, 'step_requests', okey),
+                    { requestHandled: true, requestHandledAt: at }, { merge: true });
+            } catch(e) {
+                console.error('[markRequestHandled]', e);
+                if (prev) { prev.requestHandled = false; delete prev.requestHandledAt; }
+                tl[idx].requestHandled = false;
+                checkbox.checked = false;
+                alert('완료 처리 저장에 실패했습니다.\n네트워크를 확인하고 다시 시도해 주세요.');
                 refresh();
+                return;
             }
+            save();
+            refresh();
         }
 
         function toggleRequestHandled(pharmacyId, step, checkbox) {
