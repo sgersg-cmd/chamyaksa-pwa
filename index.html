@@ -73,6 +73,12 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.18.2 모달 전환 시 새로 연 창이 닫히던 문제를 전역 차원에서 차단
+                 (직전 300ms 내 열린 모달은 popstate 대상에서 제외)
+         14.18.1 보기 모달에서 수정하기를 누르면 수정창이 곧바로 닫히던 문제 수정
+                 (history.back() 의 popstate 가 새로 연 모달까지 닫던 경쟁 조건)
+         14.18.0 이메일 항목 추가, 재개설 복구 기능 신설 — 폐업·양도 회원을 복구할 때
+                 이전 약국 기록을 남기고 새 레코드로 승계 연결(개인정보·가입비 이력 인계)
          14.17.3 관리자 조작이 스냅샷 복귀 시 되돌아가던 문제 근본 수정 — 조작 시각을
                  기록해 더 오래된 오버레이는 적용하지 않음. 누르는 순서와 무관하게 동작
          14.17.2 안내완료 체크가 한 번씩 되돌아가던 문제 수정 — 저장 순서 정정 및
@@ -178,7 +184,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.17.3';</script>
+    <script>window.APP_VERSION = '14.18.2';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1381,7 +1387,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.17.3</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.18.2</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -2499,6 +2505,7 @@
 
                 </div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">연락처</label><input type="text" id="m-phone" placeholder="010-0000-0000" oninput="formatPhone(this)" class="w-full border rounded-lg p-2.5"></div>
+                <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">이메일</label><input type="email" id="m-email" placeholder="example@naver.com" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">생년월일</label><input type="date" id="m-birth" onchange="updateMemberAge()" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">성별</label>
                     <select id="m-gender" class="w-full border rounded-lg p-2.5 bg-white">
@@ -3821,8 +3828,10 @@
         window._modalNavDepth = 0;
         window._closingViaPopstate = false;
         // 모달을 열 때 호출: 뒤로가기 한 번 누르면 이 모달부터 닫히도록 히스토리 항목 추가
-        window.pushModalNav = function() {
+        window.pushModalNav = function(modalId) {
             window._modalNavDepth++;
+            if (modalId) window.markModalOpened(modalId);
+            else MODAL_IDS_FOR_NAV.filter(isModalOpen).forEach(window.markModalOpened);
             try { history.pushState({ _modalNav: window._modalNavDepth }, ''); } catch(e) {}
         };
         // 모달을 (버튼/배경 클릭으로) 닫을 때 호출: 위에서 쌓아둔 히스토리 항목을 정리
@@ -3833,14 +3842,25 @@
                 try { history.back(); } catch(e) {}
             }
         };
+        // 모달이 열린 시각을 기록해 둔다. history.back() 은 비동기라, 모달을 닫자마자
+        // 다른 모달을 열면 뒤늦게 도착한 popstate 가 새로 연 모달까지 닫아버린다.
+        // (보기 → 수정하기 전환에서 창이 떴다가 사라지던 원인)
+        window._modalOpenedAt = {};
+        window.markModalOpened = function(id){ window._modalOpenedAt[id] = Date.now(); };
+
         window.addEventListener('popstate', function() {
             const openIds = MODAL_IDS_FOR_NAV.filter(isModalOpen);
-            if (openIds.length > 0) {
-                window._closingViaPopstate = true;
-                if (window._modalNavDepth > 0) window._modalNavDepth--;
-                openIds.forEach(id => { const fn = getModalCloseFn(id); if (typeof fn === 'function') fn(); });
-                window._closingViaPopstate = false;
-            }
+            if (openIds.length === 0) return;
+            // 방금(300ms 이내) 열린 모달은 이 popstate 의 대상이 아니다.
+            const targets = openIds.filter(id => {
+                const t = window._modalOpenedAt[id];
+                return !(t && Date.now() - t < 300);
+            });
+            if (targets.length === 0) return;
+            window._closingViaPopstate = true;
+            if (window._modalNavDepth > 0) window._modalNavDepth--;
+            targets.forEach(id => { const fn = getModalCloseFn(id); if (typeof fn === 'function') fn(); });
+            window._closingViaPopstate = false;
         });
 
         // ESC 키로 열린 모달 닫기
@@ -5680,6 +5700,30 @@
             const cfg = BULK_CONFIG[uiKey];
             const ids = bulkGetCheckedIds(uiKey);
             if (ids.length === 0) return;
+
+            // ── 가입자관리: 복구 의도를 먼저 확인한다 ──
+            // 폐업·양도로 아카이브된 약사님이 새 약국을 여는 경우, 그대로 되살리면
+            // 이전 약국 정보 위에 새 약국을 덮어쓰게 되어 히스토리가 사라진다.
+            // 이때는 아카이브를 남겨두고 새 레코드를 만들어 승계로 잇는 것이 맞다.
+            if (uiKey === 'member') {
+                const list = window.memberList || [];
+                const idSet0 = new Set(ids.map(String));
+                const targets = list.filter(r => idSet0.has(String(r.id)));
+                const reopenable = targets.filter(r =>
+                    /폐업|양도|탈퇴/.test(String(r._archiveReason || '')));
+                if (reopenable.length > 0) {
+                    const msg =
+                        `선택한 ${targets.length}건 중 ${reopenable.length}건이 폐업·양도·탈퇴로 종료된 회원입니다.\n\n` +
+                        `［확인］ 새 약국으로 재개설\n` +
+                        `   이전 약국 기록은 그대로 두고 새 레코드를 만듭니다.\n` +
+                        `   개인정보·회원등급·가입비 납입 이력은 이어받고,\n` +
+                        `   약국 정보(약국명·주소·평수·개국일)는 비워 둡니다.\n\n` +
+                        `［취소］ 원래대로 복구\n` +
+                        `   이전 약국 정보를 그대로 되살립니다. (잘못 아카이브한 경우)`;
+                    if (confirm(msg)) { window.reopenMembers(ids); return; }
+                }
+            }
+
             if (!confirm(`선택한 ${cfg.label} ${ids.length}건을 복구하시겠습니까?`)) return;
             const idSet = new Set(ids);
             (window[cfg.listKey] || []).forEach(r => {
@@ -5687,6 +5731,70 @@
             });
             if (window[cfg.saveFn]) window[cfg.saveFn]();
             if (window[cfg.renderFn]) window[cfg.renderFn]();
+        };
+
+        // ══════════════════════════════════════════════════════════
+        //  재개설 복구 — 아카이브는 남기고 새 레코드를 만들어 승계로 잇는다.
+        //
+        //  이어받는 것 : 개인정보 · 회원등급 · 가입일 · 뉴본/리본 · 가입비 납입 이력 전체
+        //                (가맹비는 평생 1회 납부이므로 새 약국에서 다시 받지 않는다)
+        //  비우는 것   : 약국명 · 주소 · 평수 · 처방과 · 개국일 · 인테리어/개설행정 진행상태
+        //                (새로 여는 약국이므로 처음부터 입력한다)
+        // ══════════════════════════════════════════════════════════
+        window.reopenMembers = async function(ids){
+            const list = window.memberList || [];
+            const idSet = new Set(ids.map(String));
+            const targets = list.filter(r => idSet.has(String(r.id)));
+            if (!targets.length) return;
+
+            // 이어받을 항목 — 사람과 회원 자격에 붙는 정보
+            const CARRY = [
+                'name','birth','ageLabel','gender','phone','email','licenseNo',
+                'grade','manager','newborn','date','firstJoinDate',
+                'contract','payment','paymentDate','joinFee','joinPaid',
+                'joinDiscount','joinDiscountMemo','joinPoint','joinPointMemo',
+                'depositPaid','paymentRemain','paymentDue','paymentMemo',
+                'exemptReason','exemptCategory','joinReason','isVip','isBranchHead',
+            ];
+            const created = [];
+            targets.forEach(old => {
+                const n = {};
+                CARRY.forEach(k => { if (old[k] !== undefined && old[k] !== '') n[k] = old[k]; });
+                n.id = 'mv-' + Date.now() + '-' + Math.random().toString(36).slice(2,7);
+                n.pharmacy = '';           // 새 약국 정보는 담당자가 입력
+                n.address = '';
+                n.size = '';
+                n.prescription = '';
+                n.openDate = '';
+                n.branch = '';
+                n.adminYn = ''; n.interiorYn = ''; n.exteriorYn = ''; n.pcpkgYn = '';
+                // 최초 가입일 유지 → 회원 연차가 리셋되지 않는다
+                n.firstJoinDate = old.firstJoinDate || old.date || '';
+                // 승계 연결
+                n.successorOf = old.id;
+                n.successionAt = new Date().toISOString();
+                n.pharmacyHistory = (Array.isArray(old.pharmacyHistory) ? old.pharmacyHistory.slice() : []);
+                n.pharmacyHistory.push({
+                    memberId: old.id,
+                    pharmacy: old.pharmacy || '',
+                    joinDate: old.date || '',
+                    openDate: old.openDate || '',
+                    endReason: old._archiveReason || '',
+                    endedAt: old.endDate || old._deletedAt || ''
+                });
+                const head = `── 이전 약국 (${old.pharmacy || '약국명 미상'}${old._archiveReason ? ' · ' + old._archiveReason : ''}) ──`;
+                const body = String(old.memo || '').trim();
+                n.memo = [head,
+                          `가입 ${old.date || '-'} · 개국 ${old.openDate || '-'} · 종료 ${old.endDate || '-'}`,
+                          body].filter(Boolean).join('\n');
+                list.push(n);
+                created.push(`${n.name} — ${old.pharmacy || '약국명 미상'} → (새 약국 입력 필요)`);
+            });
+            if (window.saveMembers) await window.saveMembers();
+            if (window.renderMembers) window.renderMembers();
+            alert(`재개설 ${created.length}건이 생성되었습니다.\n\n` + created.join('\n') +
+                  `\n\n※ 이전 약국 기록은 아카이브에 그대로 남아 있습니다.\n` +
+                  `※ 새 레코드에서 약국명·주소·평수·개국일을 입력해 주세요.`);
         };
 
         window.bulkPermanentDelete = function(uiKey) {
@@ -6771,7 +6879,7 @@
             const gf = document.getElementById('member-filter-grade')?.value||'';
             const sf = document.getElementById('member-filter-special')?.value||'';
             const filtered = memberFiltered.filter(r=>
-                (!q||[r.name,r.pharmacy,r.phone,r.address,r.manager,r.payment,r.contract,r.grade,r.memo,r.openDate,r.date,r.newborn,r.prescription,
+                (!q||[r.name,r.pharmacy,r.phone,r.email,r.address,r.manager,r.payment,r.contract,r.grade,r.memo,r.openDate,r.date,r.newborn,r.prescription,
                       r.isVip?'VIP 약사회원':'', r.isBranchHead?'지부장':''].some(v=>v?.toLowerCase().includes(q)))&&
                 (!pf||r.payment===pf)&&
                 (!gf||r.grade===gf)&&
@@ -7075,7 +7183,7 @@
             window._succMeta = null;
             document.getElementById('m-edit-id').value='';
             ['m-is-vip','m-is-branch'].forEach(id=>{const e=document.getElementById(id); if(e) e.checked=false;});
-            ['m-name','m-pharmacy','m-phone','m-manager','m-address','m-memo','m-exempt-reason','m-size','m-prescription',
+            ['m-name','m-pharmacy','m-phone','m-manager','m-address','m-email','m-memo','m-exempt-reason','m-size','m-prescription',
              'm-payment-remain','m-payment-memo','m-deposit-paid','m-exempt-reason',
              'm-join-fee','m-join-paid','m-join-discount','m-join-discount-memo','m-join-point','m-join-point-memo',
              'm-birth','m-age-display'
@@ -7179,6 +7287,7 @@
                         section('계약 / 입금',
                             row('계약서', r.contract, {badge: r.contract==='완료'?B.ok:B.warn}) +
                             row('입금상태', r.payment, {badge: r.payment==='완납'?B.ok:B.warn}) +
+                            row('이메일', r.email) +
                             row('특별관리', [r.isVip?'VIP 약사회원':'', r.isBranchHead?'지부장':''].filter(Boolean).join(' · ')) +
                             row('입금일', r.paymentDate) + row('면제분류', r.exemptCategory) + row('면제사유', r.exemptReason) +
                             row('전체 가입금액', r.joinFee, {money:true}) +
@@ -7389,9 +7498,9 @@
                 }
                 footer += `<button onclick="closeViewModal()" class="text-xs px-4 py-2 rounded-lg border bg-white hover:bg-slate-100 font-bold text-slate-600">닫기</button>`;
                 if(isArchived){
-                    footer += `<button onclick="closeViewModal();restoreMember('${esc(r.id)}')" class="text-xs px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold">↩ 복구</button>`;
+                    footer += `<button onclick="hideViewModalThen(()=>restoreMember('${esc(r.id)}'))" class="text-xs px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-bold">↩ 복구</button>`;
                 } else if(spec.editFn && typeof window[spec.editFn] === 'function'){
-                    footer += `<button onclick="closeViewModal();window.${spec.editFn}('${esc(r.id)}')" class="text-xs px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold"><i class="fa-solid fa-pen mr-1"></i>수정하기</button>`;
+                    footer += `<button onclick="switchToEdit('${esc(type)}','${esc(r.id)}')" class="text-xs px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 font-bold"><i class="fa-solid fa-pen mr-1"></i>수정하기</button>`;
                 }
                 document.getElementById('view-modal-footer').innerHTML = footer;
 
@@ -7420,6 +7529,29 @@
                 window.popModalNav();
             };
 
+            // ── 보기 → 수정 전환 ──
+            // closeViewModal() 은 popModalNav() → history.back() 을 부른다.
+            // history.back() 은 비동기라, 바로 수정 모달을 열면 잠시 뒤 도착한
+            // popstate 가 "열린 모달을 닫아라"로 동작해 방금 연 수정창까지 닫아버린다.
+            // (창이 바뀌었다가 사라지는 증상의 원인)
+            // 그래서 히스토리를 되돌리지 않고 보기 모달만 감춘 뒤 수정 모달로 넘긴다.
+            // 보기 모달을 history.back() 없이 감춘 뒤 다음 동작을 실행한다.
+            window.hideViewModalThen = function(next){
+                const el = document.getElementById('view-modal');
+                if(el) el.style.display = 'none';
+                window.__viewStack = [];
+                window.__viewCurrent = null;
+                if(typeof next === 'function') next();
+            };
+            window.switchToEdit = function(type, id){
+                const spec = SPECS[type]; if(!spec) return;
+                const fn = window[spec.editFn];
+                if(typeof fn !== 'function') return;
+                // 보기 모달이 쌓아둔 히스토리 항목은 수정 모달이 그대로 이어받는다.
+                // (수정 모달을 닫을 때 정리되므로 depth 를 건드리지 않는다)
+                window.hideViewModalThen(()=>fn(id));
+            };
+
             // 행 클릭으로도 보기 모달 열기 (버튼/링크/입력요소 클릭은 제외)
             document.addEventListener('click', function(e){
                 const tr = e.target.closest('[data-view-type][data-view-id]');
@@ -7442,6 +7574,7 @@
             const mgE=document.getElementById('m-gender'); if(mgE) mgE.value=r.gender||'';
             updateMemberAge();
             document.getElementById('m-address').value=r.address||'';
+            const _em=document.getElementById('m-email'); if(_em) _em.value=r.email||'';
             const _vip=document.getElementById('m-is-vip'); if(_vip) _vip.checked=!!r.isVip;
             const _bh=document.getElementById('m-is-branch'); if(_bh) _bh.checked=!!r.isBranchHead;
             updateBranchBadge();
@@ -7492,7 +7625,7 @@
 
             // ── 승계 대상 필드 ──
             // 사람 귀속 정보
-            const F_PERSON  = ['name','birth','gender','phone'];
+            const F_PERSON  = ['name','birth','gender','phone','email'];
             // 회원 자격
             const F_MEMBER  = ['grade','newborn'];
             // 가입비 관련 (평생회원제 → 최초 1회 납부분을 그대로 승계)
@@ -7712,7 +7845,7 @@
             const record={
                 id:editId||String(Date.now()),
                 date:gv('m-date'), name:gv('m-name'), pharmacy:gv('m-pharmacy'),
-                phone:gv('m-phone'), address:gv('m-address'), manager:gv('m-manager'),
+                phone:gv('m-phone'), email:gv('m-email'), address:gv('m-address'), manager:gv('m-manager'),
                 birth:gv('m-birth'), gender:gv('m-gender'), ageLabel:window.computeAgeLabel(gv('m-birth')),
                 newborn:gv('m-newborn'), grade:gv('m-grade'), size:gv('m-size'),
                 prescription:gv('m-prescription'), contract:gv('m-contract'), payment:gv('m-payment'),
