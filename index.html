@@ -73,6 +73,9 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.19.0 [중요] 일정이 공휴일에 배정되고 달력에 표시되지 않던 문제 수정 —
+                 toISOString() 이 KST 날짜를 하루 밀어 공휴일 판정이 어긋나던 것(17곳),
+                 공휴일 로드 전 계산된 일정 재동기화, 달력에서 보정이 이중 적용되던 것
          14.18.3 개별 복구 버튼에도 재개설 확인 절차 적용 (일괄 복구에만 적용돼 있던 것)
          14.18.2 모달 전환 시 새로 연 창이 닫히던 문제를 전역 차원에서 차단
                  (직전 300ms 내 열린 모달은 popstate 대상에서 제외)
@@ -185,7 +188,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.18.3';</script>
+    <script>window.APP_VERSION = '14.19.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1388,7 +1391,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.18.3</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.19.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -4517,7 +4520,7 @@
             const negMargin=[];   // 포인트 지급액이 실입금을 넘어선 건 (건별 역마진)
             const exemptByCat={}; let exemptGuessed=0, exemptCondAmt=0, exemptUncondAmt=0;
             let exemptNoAmt=0, exemptNoAmtPharmacist=0;
-            const today = new Date().toISOString().split('T')[0];
+            const today = window.todayStr();
             list.forEach(r => {
                 activeCount++;
                 mAgeMap[window.ageGroupFromBirth(r.birth)] = (mAgeMap[window.ageGroupFromBirth(r.birth)]||0)+1;
@@ -5964,7 +5967,7 @@
         function openPosModal() {
             document.getElementById('pos-edit-id').value = '';
             document.getElementById('pos-version').value = 'V2.0';
-            document.getElementById('pos-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('pos-date').value = window.todayStr();
             ['pos-name','pos-pharmacy','pos-phone','pos-program','pos-memo'].forEach(id => { const e=document.getElementById(id); if(e)e.value=''; });
             document.getElementById('pos-contract').value = '작성전';
             document.getElementById('pos-cms').value = '미연동';
@@ -6730,7 +6733,7 @@
             document.getElementById('m-name').value = r.name||'';
             document.getElementById('m-phone').value = r.phone||'';
             document.getElementById('m-address').value = r.region||'';
-            document.getElementById('m-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('m-date').value = window.todayStr();
             // 뉴본/리본, 평수 자동 이월
             if(r.pharmacyType) document.getElementById('m-newborn').value = r.pharmacyType;
             if(r.size) document.getElementById('m-size').value = r.size;
@@ -6758,7 +6761,7 @@
 
         function openConsultModal() {
             document.getElementById('c-edit-id').value='';
-            document.getElementById('c-date').value=new Date().toISOString().split('T')[0];
+            document.getElementById('c-date').value=window.todayStr();
             ['c-name','c-phone','c-region','c-memo','c-remind-date','c-size','c-cancel-detail','c-join-reason-etc'].forEach(i=>document.getElementById(i)&&(document.getElementById(i).value=''));
             document.getElementById('c-channel').value='회원소개';
             document.getElementById('c-manager').value='';
@@ -6844,7 +6847,7 @@
                 document.getElementById('m-name').value=record.name;
                 document.getElementById('m-phone').value=record.phone;
                 document.getElementById('m-address').value=record.region;
-                document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
+                document.getElementById('m-date').value=window.todayStr();
                 // 가맹상담에서 입력한 정보 자동 이월
                 if(record.pharmacyType) document.getElementById('m-newborn').value=record.pharmacyType;
                 if(record.size) document.getElementById('m-size').value=record.size;
@@ -6934,9 +6937,9 @@
             bulkAfterRender('member');
 
             // 납입 리마인드 렌더링 (PC 사이드바 + 모바일 배너)
-            const today = new Date().toISOString().split('T')[0];
+            const today = window.todayStr();
             const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
-            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+            const tomorrowStr = window.toLocalDateStr(tomorrow);
 
             // 완납 제외, 분납중이고 다음 납입일이 내일 이하인 약국만 표시
             const installList = list.filter(r => {
@@ -7191,7 +7194,7 @@
             ].forEach(i=>{const e=document.getElementById(i);if(e)e.value='';});
             const mg=document.getElementById('m-gender'); if(mg) mg.value='';
             const erw=document.getElementById('exempt-reason-wrap'); if(erw) erw.classList.add('hidden');
-            document.getElementById('m-date').value=new Date().toISOString().split('T')[0];
+            document.getElementById('m-date').value=window.todayStr();
             document.getElementById('m-newborn').value='';
             document.getElementById('m-grade').value='정회원';
             document.getElementById('m-contract').value='작성전';
@@ -7920,13 +7923,13 @@
                     p.fromMemberId===record.id || p.pharmacist===record.name
                 );
                 if(!alreadyExists){
-                    const today=new Date().toISOString().split('T')[0];
+                    const today=window.todayStr();
                     // 오픈예정일 입력값 우선, 없으면 기본값
                     let defaultOpenStr = gv('m-open-date') || '';
                     if(!defaultOpenStr) {
                         const defaultOpen=new Date();
                         defaultOpen.setDate(defaultOpen.getDate()+(isTransfer?60:90));
-                        defaultOpenStr = defaultOpen.toISOString().split('T')[0];
+                        defaultOpenStr = window.toLocalDateStr(defaultOpen);
                     }
                     // 주소에서 지역 유추
                     const addrStr = record.address||record.region||'';
@@ -7982,7 +7985,7 @@
                 const exists=(window.interiorList||[]).find(x=>x.name===record.name&&x.sourceId===record.id&&x.type!=='PC패키지');
                 if(!exists){
                     window.interiorList=window.interiorList||[];
-                    const linkDate=new Date().toISOString().split('T')[0];
+                    const linkDate=window.todayStr();
                     window.interiorList.unshift({id:String(Date.now()),sourceId:record.id,memberId:record.id,name:record.name,pharmacy:record.pharmacy||'',type,status:'실측예정',partner:'',partnerManager:'',intEstimate:'',intMarginRate:'',extEstimate:'',extMarginRate:'',marginRate:'',registerDate:linkDate,memo:''});
                     window.saveInteriors&&window.saveInteriors();
                     window.renderInteriors&&window.renderInteriors();
@@ -7993,7 +7996,7 @@
                 const existsPc=(window.interiorList||[]).find(x=>x.name===record.name&&x.sourceId===record.id&&x.type==='PC패키지');
                 if(!existsPc){
                     window.interiorList=window.interiorList||[];
-                    const linkDate2=new Date().toISOString().split('T')[0];
+                    const linkDate2=window.todayStr();
                     window.interiorList.unshift({id:String(Date.now()+1),sourceId:record.id,memberId:record.id,name:record.name,pharmacy:record.pharmacy||'',type:'PC패키지',status:'실측예정',partner:'',partnerManager:'',pcpkgEstimate:'',pcpkgMarginRate:'',registerDate:linkDate2,memo:''});
                     window.saveInteriors&&window.saveInteriors();
                     window.renderInteriors&&window.renderInteriors();
@@ -8295,9 +8298,9 @@
         }
 
         function renderInteriorReminders(list) {
-            const today = new Date().toISOString().split('T')[0];
+            const today = window.todayStr();
             const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
-            const tomorrowStr = tomorrow.toISOString().split('T')[0];
+            const tomorrowStr = window.toLocalDateStr(tomorrow);
 
             // 장기보류: 상태=장기보류 & 리마인드 예정일 전날부터 (해제 시까지 = 상태가 장기보류인 동안 유지)
             const longtermList = list.filter(r => r.status==='장기보류' && r.remindDate && r.remindDate <= tomorrowStr);
@@ -8413,7 +8416,7 @@
                 const e=document.getElementById(id);if(e){e.value='1';renderInteriorInstallments(id.replace('i-','').replace('-installment-count',''));}
             });
             // 등록일 오늘 날짜
-            const reg=document.getElementById('i-register-date');if(reg)reg.value=new Date().toISOString().split('T')[0];
+            const reg=document.getElementById('i-register-date');if(reg)reg.value=window.todayStr();
             const ltw=document.getElementById('i-longterm-wrap'); if(ltw) ltw.classList.add('hidden');
             updateInteriorFields();
             document.getElementById('interior-modal').style.display='flex';
@@ -8937,6 +8940,23 @@
             { step: 11, title: "개국 완료", day: 0, desc: "약국 양도양수 개설을 진심으로 축하드립니다!" }
         ];
 
+        // ══════════════════════════════════════════════════════════
+        //  로컬(KST) 기준 날짜 문자열
+        //  toISOString() 은 UTC 로 변환하므로 한국(UTC+9)에서는 날짜가 하루 앞으로 밀린다.
+        //   · 2026-09-24 00:00(KST) → "2026-09-23T15:00:00Z" → "2026-09-23"
+        //  이 값으로 공휴일 표를 조회하면 추석 당일인데도 평일로 판정되어,
+        //  보건소 실사 같은 일정이 연휴에 그대로 배정된다. (소풍약국 9/24 사례)
+        //  또한 오전 9시 이전에는 '오늘'이 어제로 기록된다.
+        // ══════════════════════════════════════════════════════════
+        function toLocalDateStr(d){
+            const x = (d instanceof Date) ? d : new Date(d);
+            return x.getFullYear() + '-' +
+                   String(x.getMonth()+1).padStart(2,'0') + '-' +
+                   String(x.getDate()).padStart(2,'0');
+        }
+        window.toLocalDateStr = toLocalDateStr;
+        window.todayStr = () => toLocalDateStr(new Date());
+
         // ── 대한민국 공휴일 (공공데이터 API 연동) ──
         const HOLIDAY_API_KEY = '3d31676da44e1b5c9a7b02181f5dd067d999224cc70f908e25de76566f911b7b';
         const HOLIDAY_CACHE_KEY = 'kr_holidays_cache';
@@ -8983,13 +9003,28 @@
         window.KR_HOLIDAYS = {};
 
         // 여러 연도 한번에 로드
+        // 공휴일 로드 완료 여부. 이 값이 false 인 동안 계산된 일정은 연휴 보정이 빠져 있다.
+        window._holidaysReady = false;
+        window._holidayWaiters = [];
+        window.whenHolidaysReady = function(cb){
+            if(window._holidaysReady) return cb();
+            window._holidayWaiters.push(cb);
+        };
         async function initHolidays() {
             const thisYear = new Date().getFullYear();
             const years = [thisYear - 1, thisYear, thisYear + 1, thisYear + 2];
             const results = await Promise.all(years.map(y => loadHolidays(y)));
             results.forEach(r => Object.assign(window.KR_HOLIDAYS, r));
+            window._holidaysReady = true;
             // 로드 완료 후 캘린더 재렌더링
             if(window._initDone && typeof window.refresh === 'function') window.refresh();
+            // 공휴일 없이 계산돼 저장된 일정을 다시 맞춘다.
+            // (API 응답이 늦으면 보건소 실사 등이 연휴에 배정된 채 저장된다 — 소풍약국 9/24 사례)
+            const ws = window._holidayWaiters.slice(); window._holidayWaiters = [];
+            ws.forEach(fn => { try { fn(); } catch(e){ console.error('[holidayWaiter]', e); } });
+            if(typeof window.autoSyncAllTimelines === 'function'){
+                setTimeout(()=>window.autoSyncAllTimelines(), 100);
+            }
         }
 
         // 앱 시작 시 공휴일 로드
@@ -9011,10 +9046,11 @@
             const d = (baseDate instanceof Date) ? new Date(baseDate.getTime()) : safeDate(baseDate);
             d.setDate(d.getDate() + offsetDays);
             // 토/일/공휴일이면 앞 평일(금요일 방향)로 당김
+            // 연휴가 길 수 있으므로 넉넉히 반복한다. (추석·설 최대 5일 + 주말)
             let tries = 0;
-            while(tries < 10) {
+            while(tries < 15) {
                 const dow = d.getDay();
-                const ds = d.toISOString().split('T')[0];
+                const ds = toLocalDateStr(d);
                 if(dow !== 0 && dow !== 6 && !isHoliday(ds)) break;
                 d.setDate(d.getDate() - 1);
                 tries++;
@@ -9056,9 +9092,9 @@
             return (tl || []).some(x => x.status && x.status !== '대기');
         };
 
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = window.todayStr();
         const defaultOpen = new Date(); defaultOpen.setDate(defaultOpen.getDate() + 18);
-        const defaultOpenStr = defaultOpen.toISOString().split('T')[0];
+        const defaultOpenStr = window.toLocalDateStr(defaultOpen);
 
         // 전역 변수 (Firebase 리스너가 외부에서 실시간 갱신)
         if (!window.masterPharmacies) window.masterPharmacies = [{ id: 1, name: "참약사 메인약국", region: "서울", pharmacist: "홍길동", contractDate: todayStr, openDate: defaultOpenStr, manager: "담당 SV", interior: "참디자인 / 김실장" }];
@@ -9494,19 +9530,16 @@
                 // 이벤트 수집 - 수동 배치된 일정은 주말/공휴일에도 표시
                 const cellEvents = [];
                 (timelineMap[projId] || []).forEach(s => {
-                    // 수동 드래그: raw day 그대로 / 자동 배치: 평일 보정 적용
-                    let ed;
-                    if (s.manualDay) {
-                        ed = new Date(openDate); ed.setDate(openDate.getDate() + s.day);
-                    } else {
-                        ed = window.getWeekdayDate
-                            ? window.getWeekdayDate(new Date(openDate.getTime()), s.day)
-                            : (()=>{ const d=new Date(openDate); d.setDate(openDate.getDate()+s.day); return d; })();
-                    }
+                    // timelineMap 의 day 에는 이미 평일 보정이 반영돼 있다(applyWeekdaySteps).
+                    // 여기서 또 보정하면 두 번 당겨져 실제 날짜와 어긋나고, 그 결과
+                    // 어느 칸에도 표시되지 않는 일정이 생긴다. 그대로 더하기만 한다.
+                    const ed = new Date(openDate.getTime());
+                    ed.setDate(openDate.getDate() + s.day);
                     if(ed.toDateString() === cur.toDateString()) {
-                        if(!isRestDayCell || s.manualDay || s.status === '완료') {
-                            cellEvents.push({...s, isOpen: false});
-                        }
+                        // 연휴 칸에 걸린 일정도 숨기지 않는다. 숨기면 담당자가 일정 자체를
+                        // 인지하지 못해 놓치게 된다. 보정은 day 계산 단계에서 이미 끝났고,
+                        // 그래도 연휴에 남았다면 확인이 필요하다는 뜻이므로 보여준다.
+                        cellEvents.push({...s, isOpen: false, onRestDay: isRestDayCell});
                     }
                 });
                 // OPEN 이벤트 - 항상 표시
