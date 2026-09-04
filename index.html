@@ -73,6 +73,8 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.20.0 매출관리에 실측일 항목 추가 — 실측예정 상태에서 날짜 등록,
+                 목록 뱃지 표시 및 D-3 이내 리마인드 알림
          14.19.0 [중요] 일정이 공휴일에 배정되고 달력에 표시되지 않던 문제 수정 —
                  toISOString() 이 KST 날짜를 하루 밀어 공휴일 판정이 어긋나던 것(17곳),
                  공휴일 로드 전 계산된 일정 재동기화, 달력에서 보정이 이중 적용되던 것
@@ -188,7 +190,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.19.0';</script>
+    <script>window.APP_VERSION = '14.20.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1391,7 +1393,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.19.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.20.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -2672,7 +2674,7 @@
                     </select>
                 </div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">현재 상태</label>
-                    <select id="i-status" onchange="toggleLongtermWrap()" class="w-full border rounded-lg p-2.5">
+                    <select id="i-status" onchange="toggleLongtermWrap();toggleSurveyWrap()" class="w-full border rounded-lg p-2.5">
                         <option value="실측예정">실측예정</option><option value="시안검토">시안검토</option>
                         <option value="견적안내">견적안내</option><option value="진행확정">진행확정</option>
                         <option value="계약완료">계약완료</option><option value="시공중">시공중</option>
@@ -2683,6 +2685,10 @@
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">협력업체</label>
                     <input type="text" id="i-partner" placeholder="업체명 직접 입력" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">담당자</label><input type="text" id="i-partner-manager" placeholder="담당자명" class="w-full border rounded-lg p-2.5"></div>
+                <div id="i-survey-wrap" class="hidden">
+                    <label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">실측일 <span class="text-blue-500 normal-case">— 일정 임박 시 리마인드</span></label>
+                    <input type="date" id="i-survey-date" class="w-full border border-blue-200 rounded-lg p-2.5 bg-blue-50/30">
+                </div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">등록일</label><input type="date" id="i-register-date" class="w-full border rounded-lg p-2.5"></div>
                 <div><label class="block text-[9px] text-slate-400 font-bold mb-1 uppercase">완료일 <span class="text-slate-300">(완료 시)</span></label><input type="date" id="i-complete-date" class="w-full border rounded-lg p-2.5"></div>
             </div>
@@ -3431,6 +3437,15 @@
             if (longtermWrap) longtermWrap.classList.toggle('hidden', v !== '장기보류');
             if (dropWrap) dropWrap.classList.toggle('hidden', v !== '미진행');
         }
+        // 실측일은 '실측예정' 단계에서만 입력한다. 이미 입력된 값이 있으면
+        // 상태가 넘어간 뒤에도 계속 보여줘 언제 실측했는지 확인할 수 있게 한다.
+        function toggleSurveyWrap() {
+            const v = document.getElementById('i-status')?.value;
+            const wrap = document.getElementById('i-survey-wrap');
+            const has = !!(document.getElementById('i-survey-date')?.value||'').trim();
+            if (wrap) wrap.classList.toggle('hidden', !(v === '실측예정' || has));
+        }
+        window.toggleSurveyWrap = toggleSurveyWrap;
 
         // ══════════════════════════════
         //  개설행정 - 완료 약국 숨김 / 대시보드
@@ -7404,7 +7419,7 @@
                                 row('업체', r.partner) + row('업체 담당자', r.partnerManager || r.manager)
                             ) +
                             section('일정',
-                                row('등록일', r.registerDate) + row('예정일', r.expectedDate) +
+                                row('등록일', r.registerDate) + row('실측일', r.surveyDate) + row('예정일', r.expectedDate) +
                                 row('리마인드', r.remindDate) + row('완료일', r.completeDate)
                             ) +
                             section('금액',
@@ -8266,7 +8281,7 @@
                 const rowBg = r._deleted ? 'bg-red-50/30' : 'bg-white';
                 return `<tr data-view-type="interior" data-view-id="${r.id}" class="cursor-pointer ${r._deleted ? 'opacity-50 bg-red-50/30' : 'hover:bg-blue-50/30'} group">
                     <td data-label="등록일" class="p-2 text-[11px] text-slate-500 whitespace-nowrap">${r.registerDate||'-'}</td><td data-label="약사명" class="p-2 font-bold whitespace-nowrap">${r.name||'-'}</td><td data-label="약국명" class="p-2 whitespace-nowrap">${r.pharmacy||'-'}</td>
-                    <td data-label="유형" class="p-2 whitespace-nowrap">${sBadge(r.type)}</td><td data-label="상태" class="p-2 whitespace-nowrap">${sBadge(r.status)}</td>
+                    <td data-label="유형" class="p-2 whitespace-nowrap">${sBadge(r.type)}</td><td data-label="상태" class="p-2 whitespace-nowrap">${sBadge(r.status)}${r.surveyDate?`<span class="ml-1 text-[9px] bg-blue-50 text-blue-600 border border-blue-200 rounded px-1 py-0.5 font-bold" title="실측일">실측 ${r.surveyDate.slice(5)}</span>`:''}</td>
                     <td data-label="담당자" class="p-2 text-[11px] whitespace-nowrap font-bold">${r.manager||'-'}</td>
                     <td data-label="협력업체" class="p-2 text-[11px] whitespace-nowrap">${r.partner||'-'}</td>
                     <td data-label="견적금액" class="p-2 text-[11px] font-bold whitespace-nowrap">${estDisplay}</td>
@@ -8321,9 +8336,17 @@
             };
             const installList = list.filter(r => r.status!=='미진행' && collectDue(r).length>0);
 
-            const totalCount = longtermList.length + installList.length;
+            // 실측 예정: 실측일이 등록돼 있고 3일 이내로 다가온 건.
+            // 실측은 일정 변동이 잦아 사전 확인이 필요하므로 여유를 두고 띄운다.
+            const soon = new Date(); soon.setDate(soon.getDate()+3);
+            const soonStr = window.toLocalDateStr(soon);
+            const surveyList = list.filter(r =>
+                r.surveyDate && r.status!=='미진행' && r.status!=='완료' && r.surveyDate <= soonStr);
+
+            const totalCount = longtermList.length + installList.length + surveyList.length;
             const urgentCount = longtermList.filter(r=>r.remindDate<=today).length
-                + installList.filter(r=>collectDue(r).some(i=>i.date<=today)).length;
+                + installList.filter(r=>collectDue(r).some(i=>i.date<=today)).length
+                + surveyList.filter(r=>r.surveyDate<=today).length;
 
             const longtermCards = longtermList.map(r => {
                 const isUrgent = r.remindDate <= today;
@@ -8369,10 +8392,32 @@
                 </div>`;
             }).join('');
 
+            const surveyCards = surveyList.map(r => {
+                const past = r.surveyDate < today;
+                const isToday = r.surveyDate === today;
+                const label = past ? '지남' : (isToday ? '오늘' : '예정');
+                const tone = past ? 'red' : (isToday ? 'blue' : 'indigo');
+                const dLeft = Math.round((new Date(r.surveyDate+'T00:00:00') - new Date(today+'T00:00:00'))/86400000);
+                return `<div class="${past?'bg-red-50 border-red-200':'bg-white border-'+tone+'-200'} rounded-xl p-3 border mb-2 last:mb-0">
+                    <div class="flex justify-between items-center mb-1.5 gap-1">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-[9px] bg-${tone}-500 text-white px-1.5 py-0.5 rounded font-bold flex-shrink-0">실측</span>
+                            <span class="text-sm font-bold truncate">${r.name}</span>
+                            <span class="text-[10px] text-slate-400 truncate">${r.pharmacy||''}</span>
+                        </div>
+                        ${window.viewBtn('interior', r.id, 'sm')}<button onclick="event.stopPropagation();editInterior('${r.id}')" class="text-[9px] border rounded px-1.5 py-0.5 hover:bg-white text-${tone}-600 border-${tone}-200 flex-shrink-0">수정</button>
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] bg-slate-50 rounded-lg px-2 py-1.5">
+                        <span class="text-slate-500">${r.partner||'업체 미정'}${r.partnerManager?' · '+r.partnerManager:''}</span>
+                        <span class="${past?'text-red-600':'text-'+tone+'-600'} font-bold"><i class="fa-regular fa-calendar-check mr-1"></i>${r.surveyDate} ${past?'('+Math.abs(dLeft)+'일 지남)':(isToday?'(오늘)':'(D-'+dLeft+')')}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
             const emptyHtml = '<p class="text-xs text-slate-400 text-center py-4">리마인드 대상이 없습니다</p>';
             const sectionHtml = (title, cards) => cards ? `<p class="text-[10px] font-bold text-slate-400 uppercase mb-1.5 mt-1">${title}</p>${cards}` : '';
             const fullHtml = totalCount===0 ? emptyHtml
-                : sectionHtml('장기보류', longtermCards) + sectionHtml('분납 도래', installCards);
+                : sectionHtml('실측 예정', surveyCards) + sectionHtml('장기보류', longtermCards) + sectionHtml('분납 도래', installCards);
 
             const pcEl = document.getElementById('int-remind-list');
             if(pcEl) pcEl.innerHTML = fullHtml;
@@ -8404,6 +8449,7 @@
              'i-drop-reason','i-drop-detail'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
             document.getElementById('i-type').value='인테리어';
             document.getElementById('i-status').value='실측예정';
+            const _sv0=document.getElementById('i-survey-date'); if(_sv0) _sv0.value='';
             // 견적금액 공란으로 (0 입력 번거로움 제거)
             ['i-int-estimate','i-int-margin-rate','i-ext-estimate','i-ext-margin-rate',
              'i-cham-estimate','i-cham-margin-rate','i-pcpkg-estimate','i-pcpkg-margin-rate',
@@ -8437,6 +8483,7 @@
             document.getElementById('i-pharmacy').value=r.pharmacy||'';
             document.getElementById('i-type').value=r.type||'인테리어';
             document.getElementById('i-status').value=r.status||'실측예정';
+            const _sv=document.getElementById('i-survey-date'); if(_sv) _sv.value=r.surveyDate||'';
             document.getElementById('i-partner').value=r.partner||'';
             document.getElementById('i-partner-manager').value=r.partnerManager||r.manager||'';
             document.getElementById('i-memo').value=r.memo||'';
@@ -8445,7 +8492,7 @@
             sv('i-longterm-reason',r.longtermReason); sv('i-drop-reason',r.dropReason);
             sv('i-drop-detail',r.dropDetail);
             sv('i-register-date',r.registerDate); sv('i-complete-date',r.completeDate);
-            toggleLongtermWrap();
+            toggleLongtermWrap(); toggleSurveyWrap();
             const bz = v => (!v || v==='0') ? '' : v;
             const toSettlement = (est,rate)=>{const e=parseFloat(est)||0,r=parseFloat(rate)||0;return (e>0&&rate)?String(Math.round(e-(e*r/100))):'';};
             if(r.type==='인테리어'){
@@ -8580,7 +8627,8 @@
                 name:gv('i-name'),pharmacy:gv('i-pharmacy'),type,
                 status:gv('i-status'),partner:gv('i-partner'),partnerManager:gv('i-partner-manager'),manager:gv('i-partner-manager'),
                 intEstimate,intMarginRate,extEstimate,extMarginRate,chamEstimate,chamMarginRate,pcpkgEstimate,pcpkgMarginRate,memo:gv('i-memo'),
-                intScope: (type==='인익스테리어' ? gv('i-both-int-scope') : gv('i-int-scope')),  // 전체 / 부분 — 평당 단가 집계 기준
+                intScope: (type==='인익스테리어' ? gv('i-both-int-scope') : gv('i-int-scope')),
+                surveyDate: gv('i-survey-date'),   // 실측일 — 리마인드 대상  // 전체 / 부분 — 평당 단가 집계 기준
                 expectedDate:gv('i-expected-date'),remindDate:gv('i-remind-date'),
                 longtermReason:gv('i-longterm-reason'),dropReason:gv('i-drop-reason'),dropDetail:gv('i-drop-detail'),
                 registerDate:gv('i-register-date'),
