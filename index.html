@@ -73,6 +73,9 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.20.1 [긴급] 개설행정 전체가 견본 1건으로 덮어써진 사고 수정 —
+                 서버 데이터 로드 전 저장 차단, 견본 데이터 저장 차단, 건수 급감 시 저장 차단
+                 (원인: 14.19.0 에서 추가한 공휴일 로드 후 재동기화가 서버 데이터보다 먼저 실행)
          14.20.0 매출관리에 실측일 항목 추가 — 실측예정 상태에서 날짜 등록,
                  목록 뱃지 표시 및 D-3 이내 리마인드 알림
          14.19.0 [중요] 일정이 공휴일에 배정되고 달력에 표시되지 않던 문제 수정 —
@@ -190,7 +193,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.20.0';</script>
+    <script>window.APP_VERSION = '14.20.1';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -390,6 +393,10 @@
             // master 데이터
             onSnapshot(doc(db,'chamyaksa','master'),snap=>{
                 if(snap.exists()&&snap.data().list) window.masterPharmacies=scopeMasterForShared(snap.data().list);
+                // 서버에서 실제 데이터를 받았다는 표시. 이 값이 true 가 되기 전에는
+                // 어떤 경로로도 master/timeline 을 저장하지 않는다. (견본 1건 덮어쓰기 사고 방지)
+                window._masterLoaded = true;
+                window._masterServerCount = (window.masterPharmacies||[]).length;
                 window._fbReady=true;
                 callInit();
                 if(inited&&typeof window.refresh==='function'){
@@ -444,9 +451,34 @@
                 // 여기서 저장이 실행되면 master 문서 전체가 1건으로 덮어써질 수 있다.
                 // Firestore 규칙(write: auth 필요)이 1차 방어이지만 클라이언트에서도 차단한다.
                 if(window._resolvedPharmacyId){ return; }
+
+                // [안전장치 1] 서버 데이터를 받기 전에는 저장하지 않는다.
+                // 페이지 로드 직후에는 견본 1건(참약사 메인약국)이 채워져 있는데,
+                // 이 상태로 저장되면 전체 약국이 견본 1건으로 덮어써진다.
+                // (2026-09-28 사고: 공휴일 로드 후 재동기화가 서버 데이터보다 먼저 실행됨)
+                if(!window._masterLoaded){
+                    console.warn('[saveToFirebase] 서버 데이터 로드 전 — 저장 차단');
+                    return;
+                }
+                const _list = window.masterPharmacies || [];
+                // [안전장치 2] 견본 데이터는 절대 저장하지 않는다.
+                if(_list.some(p => p && p._seed)){
+                    console.error('[saveToFirebase] 견본 데이터 포함 — 저장 차단');
+                    return;
+                }
+                // [안전장치 3] 건수가 급감하면 저장하지 않는다.
+                // 약국 삭제는 _deleted 표시만 하고 목록에서 빼지 않으므로,
+                // 정상적인 조작으로 건수가 절반 이하로 줄어드는 일은 없다.
+                const _prev = window._masterServerCount || 0;
+                if(_prev >= 5 && _list.length < _prev * 0.5){
+                    console.error(`[saveToFirebase] 건수 급감 ${_prev}→${_list.length} — 저장 차단`);
+                    alert(`⚠ 저장이 차단되었습니다.\n\n개설행정 약국 수가 ${_prev}곳 → ${_list.length}곳으로 급감했습니다.\n데이터 손실을 막기 위해 저장하지 않았습니다.\n\n페이지를 새로고침한 뒤 다시 시도해 주세요.`);
+                    return;
+                }
                 try{
                     window._timelineSaving = true;
                     await setDoc(doc(db,'chamyaksa','master'),{list:window.masterPharmacies});
+                    window._masterServerCount = _list.length;
                     const m={};Object.keys(window.timelineMap||{}).forEach(k=>{m[String(k)]=(window.timelineMap||{})[k];});
                     await setDoc(doc(db,'chamyaksa','timeline'),{map:m});
                     window._timelineSaving = false;
@@ -1393,7 +1425,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.20.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.20.1</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -9145,7 +9177,9 @@
         const defaultOpenStr = window.toLocalDateStr(defaultOpen);
 
         // 전역 변수 (Firebase 리스너가 외부에서 실시간 갱신)
-        if (!window.masterPharmacies) window.masterPharmacies = [{ id: 1, name: "참약사 메인약국", region: "서울", pharmacist: "홍길동", contractDate: todayStr, openDate: defaultOpenStr, manager: "담당 SV", interior: "참디자인 / 김실장" }];
+        // 서버 데이터가 오기 전 화면을 비워두지 않기 위한 견본. _seed 표시가 있어
+        // saveToFirebase 가 절대 저장하지 않는다.
+        if (!window.masterPharmacies) window.masterPharmacies = [{ id: 1, _seed: true, name: "참약사 메인약국", region: "서울", pharmacist: "홍길동", contractDate: todayStr, openDate: defaultOpenStr, manager: "담당 SV", interior: "참디자인 / 김실장" }];
         if (!window.timelineMap) window.timelineMap = {};
         // 로컬 참조용 단축 변수
         var masterPharmacies = window.masterPharmacies;
@@ -9230,7 +9264,9 @@
             // 약사 페이지(공유 링크)에서는 실행하지 않음.
             // 본인 약국 1건만 메모리에 있고 쓰기 권한도 없어 무의미한 저장 시도만 발생함.
             if(window._resolvedPharmacyId) return;
-            const pharmacies = window.masterPharmacies || [];
+            // 서버 데이터를 받기 전이면 견본 1건만 있는 상태이므로 동기화하지 않는다.
+            if(!window._masterLoaded) return;
+            const pharmacies = (window.masterPharmacies || []).filter(p => !p._seed);
             if(!pharmacies.length) return;
             let changed = false;
 
