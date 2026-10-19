@@ -73,6 +73,9 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.21.0 참포스 월별 정산관리 정렬 — 기본 약국명 가나다순 고정(생성/갱신해도 순서 유지),
+                 약국명·약사명·월요금·정산금액 헤더 클릭 정렬(▼내림→▲오름→해제),
+                 정렬·제외 전환 시 저장 전 입력값/체크 유지, 엑셀 다운로드도 화면 순서와 동일
          14.20.1 [긴급] 개설행정 전체가 견본 1건으로 덮어써진 사고 수정 —
                  서버 데이터 로드 전 저장 차단, 견본 데이터 저장 차단, 건수 급감 시 저장 차단
                  (원인: 14.19.0 에서 추가한 공휴일 로드 후 재동기화가 서버 데이터보다 먼저 실행)
@@ -193,7 +196,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.20.1';</script>
+    <script>window.APP_VERSION = '14.21.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1425,7 +1428,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.20.1</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.21.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -2100,10 +2103,10 @@
                         <table class="w-full text-left border-collapse min-w-[620px] text-xs">
                             <thead><tr class="bg-white/60 border-b border-indigo-200 text-[10px] text-indigo-500 font-bold uppercase">
                                 <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-include-all" class="w-4 h-4" checked onchange="togglePosMonthSelectAll(this)" title="전체 선택/해제"><span class="text-[9px] leading-none">전체</span></div></th>
-                                <th class="p-2">약국명</th><th class="p-2">약사명</th>
-                                <th class="p-2 text-right">월요금(만원)</th>
+                                <th class="p-2 cursor-pointer select-none whitespace-nowrap" data-sort-tab="posMonth" data-sort-key="pharmacy" onclick="togglePosMonthSort('pharmacy')">약국명<span class="sort-ar"></span></th><th class="p-2 cursor-pointer select-none whitespace-nowrap" data-sort-tab="posMonth" data-sort-key="name" onclick="togglePosMonthSort('name')">약사명<span class="sort-ar"></span></th>
+                                <th class="p-2 text-right cursor-pointer select-none whitespace-nowrap" data-sort-tab="posMonth" data-sort-key="fee" onclick="togglePosMonthSort('fee')">월요금(만원)<span class="sort-ar"></span></th>
                                 <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-fee-conf-all" class="w-4 h-4" onchange="togglePosMonthConfAll('fee', this)" title="입금확인 전체 선택/해제"><span class="text-[9px] leading-none">입금확인</span></div></th>
-                                <th class="p-2 text-right">정산금액(만원)</th>
+                                <th class="p-2 text-right cursor-pointer select-none whitespace-nowrap" data-sort-tab="posMonth" data-sort-key="settlement" onclick="togglePosMonthSort('settlement')">정산금액(만원)<span class="sort-ar"></span></th>
                                 <th class="p-2 text-center"><div class="flex flex-col items-center gap-0.5"><input type="checkbox" id="pmf-sett-conf-all" class="w-4 h-4" onchange="togglePosMonthConfAll('sett', this)" title="정산확인 전체 선택/해제"><span class="text-[9px] leading-none">정산확인</span></div></th>
                             </tr></thead>
                             <tbody id="pos-month-table-body" class="divide-y divide-indigo-100 bg-white/40"></tbody>
@@ -3008,7 +3011,7 @@
         function downloadPosSettlementExcel() {
             const m = window._posCurMonth;
             const ledger = (window.posMonthlyLedger || {})[m] || {};
-            const ids = Object.keys(ledger);
+            const ids = window.sortedPosMonthIds ? window.sortedPosMonthIds(m) : Object.keys(ledger);
             if (ids.length === 0) { alert(`${m} 정산 내역이 없습니다. 먼저 "이번달 목록 생성/갱신"으로 목록을 만들어주세요.`); return; }
             const posMap = {}; (window.posList || []).forEach(r => posMap[r.id] = r);
             const headers = ['약국명', '약사명', '연락처', '월요금', '입금확인', '정산금액', '정산확인'];
@@ -5929,7 +5932,7 @@
         // ═══════════════════════════════
         window.posList = [];
         window.posMonthlyLedger = {};
-        window._posCurMonth = new Date().toISOString().slice(0,7);
+        window._posCurMonth = (()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');})();
         window.savePosMonthlyLedger = window.savePosMonthlyLedger || async function() { /* Firebase 모듈에서 정의됨 */ };
         window._showDeletedPos = false;
         window._posPage_v1 = 1;
@@ -6133,6 +6136,7 @@
 
         // ── 월별 정산관리 ──
         function movePosMonth(delta) {
+            window.capturePosMonthDraft && window.capturePosMonthDraft();
             const d = safeDate(window._posCurMonth + '-01');
             d.setMonth(d.getMonth() + delta);
             window._posCurMonth = fmtDateLocal(d).slice(0,7);
@@ -6154,6 +6158,7 @@
 
         function generatePosMonth() {
             const m = window._posCurMonth;
+            window.capturePosMonthDraft && window.capturePosMonthDraft();
             const active = activePosForMonth(m);
             window.posMonthlyLedger = window.posMonthlyLedger || {};
             const cur = window.posMonthlyLedger[m] || {};
@@ -6178,6 +6183,7 @@
             const m = window._posCurMonth;
             const ledger = (window.posMonthlyLedger || {})[m];
             if (!ledger || !ledger[id]) return;
+            window.capturePosMonthDraft();
             ledger[id].excluded = !checkboxEl.checked;
             renderPosMonthly();
         }
@@ -6192,6 +6198,7 @@
         function togglePosMonthSelectAll(checkboxEl) {
             const m = window._posCurMonth;
             const ledger = (window.posMonthlyLedger || {})[m] || {};
+            window.capturePosMonthDraft();
             Object.keys(ledger).forEach(id => { ledger[id].excluded = !checkboxEl.checked; });
             renderPosMonthly();
         }
@@ -6220,6 +6227,7 @@
                 ledger[id].settlementConfirmed = tr.querySelector('.pmf-sett-conf')?.checked || false;
                 delete ledger[id].excluded;
             });
+            if (window._posMonthDraft) delete window._posMonthDraft[m];
             window.savePosMonthlyLedger();
             renderPosMonthly();
             const msg = excludedCount > 0 ? `✅ 저장되었습니다 (${excludedCount}곳 제외됨)` : '✅ 저장되었습니다';
@@ -6252,13 +6260,68 @@
             });
         };
 
+        // ── 월별 정산 정렬 ──
+        // 저장 전 화면 입력값(월요금·정산금액·확인 체크)을 월별 임시본에 보관 → 정렬/제외 전환으로 다시 그려도 유지
+        window._posMonthDraft = window._posMonthDraft || {};
+        window.capturePosMonthDraft = function(){
+            const m = window._posCurMonth;
+            const tbody = document.getElementById('pos-month-table-body');
+            if(!tbody || !m) return;
+            const d = window._posMonthDraft[m] = window._posMonthDraft[m] || {};
+            tbody.querySelectorAll('.pos-month-row').forEach(tr => {
+                const id = tr.dataset.id; if(!id) return;
+                d[id] = {
+                    fee: tr.querySelector('.pmf-fee')?.value ?? '',
+                    feeConfirmed: !!tr.querySelector('.pmf-fee-conf')?.checked,
+                    settlement: tr.querySelector('.pmf-sett')?.value ?? '',
+                    settlementConfirmed: !!tr.querySelector('.pmf-sett-conf')?.checked,
+                };
+            });
+        };
+        // 화면에 보일 값: 임시본 우선, 없으면 원장
+        window.posMonthView = function(m, id){
+            const e = ((window.posMonthlyLedger||{})[m]||{})[id] || {};
+            const d = ((window._posMonthDraft||{})[m]||{})[id];
+            return d ? Object.assign({}, e, d) : e;
+        };
+        // 정렬된 id 목록 — 사용자 정렬이 없으면 약국명 가나다순(동일 시 약사명순)
+        window.sortedPosMonthIds = function(m){
+            const ledger = (window.posMonthlyLedger||{})[m] || {};
+            const posMap = {}; (window.posList||[]).forEach(r=>posMap[r.id]=r);
+            const get = (id,key) => {
+                const r = posMap[id] || {};
+                if(key==='pharmacy') return r.pharmacy||'';
+                if(key==='name') return r.name||'';
+                const v = window.posMonthView(m,id)[key];
+                return (v===''||v==null) ? '' : String(v);
+            };
+            const base = Object.keys(ledger).sort((a,b)=>
+                window._sortCmp(get(a,'pharmacy'),get(b,'pharmacy')) ||
+                window._sortCmp(get(a,'name'),get(b,'name')) ||
+                (a<b?-1:a>b?1:0));
+            const st = (window._sortState||{})['posMonth'];
+            if(!st || !st.key) return base;
+            const dir = st.dir==='desc' ? -1 : 1;
+            // 빈 값은 오름/내림 어느 쪽이든 항상 맨 뒤
+            return [...base].sort((x,y)=>{
+                const vx=get(x,st.key), vy=get(y,st.key);
+                if(vx===''&&vy!=='') return 1;
+                if(vy===''&&vx!=='') return -1;
+                return (window._sortCmp(vx,vy)*dir) || (base.indexOf(x)-base.indexOf(y));
+            });
+        };
+        window.togglePosMonthSort = function(key){
+            window.capturePosMonthDraft();
+            window.toggleSort('posMonth', key, 'renderPosMonthly');
+        };
+
         window.renderPosMonthly = function() {
             const label = document.getElementById('pos-month-label');
             if (!label) return; // POS 탭이 아직 렌더되지 않음
             const m = window._posCurMonth;
             label.textContent = m;
             const ledger = (window.posMonthlyLedger||{})[m] || {};
-            const ids = Object.keys(ledger);
+            const ids = window.sortedPosMonthIds(m);
             const tbody = document.getElementById('pos-month-table-body');
             const posMap = {}; (window.posList||[]).forEach(r=>posMap[r.id]=r);
             if (ids.length === 0) {
@@ -6266,7 +6329,7 @@
             } else {
                 tbody.innerHTML = ids.map(id => {
                     const r = posMap[id] || {};
-                    const e = ledger[id];
+                    const e = window.posMonthView(m, id);
                     const excluded = !!e.excluded;
                     return `<tr class="pos-month-row ${excluded ? 'opacity-40' : ''} hover:bg-white/60" data-id="${id}">
                         <td class="p-2 text-center"><input type="checkbox" class="pmf-include w-4 h-4" ${excluded ? '' : 'checked'} onchange="togglePosMonthRowExclude(this)" title="체크 해제하면 저장 시 이 약국은 제외됩니다"></td>
@@ -6298,6 +6361,7 @@
                 <div class="bg-white rounded-lg p-2 border border-indigo-100"><p class="text-[9px] text-indigo-400 font-bold">정산확인</p><p class="font-black text-orange-600">${confirmedSettCnt}/${includedIds.length}건 · ${window.fmtAmt(totalSett)}</p></div>
             `;
             window.syncPosMonthConfHeader();
+            if (window.paintSortArrows) window.paintSortArrows('posMonth');
         };
         function showPosDashboard() {
             const list    = (window.posList||[]).filter(r => !r._deleted);
