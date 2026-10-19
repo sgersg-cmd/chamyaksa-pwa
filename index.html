@@ -73,6 +73,11 @@
          └─────────────────────────────────────────────────────────────┘
 
          ── 14.x  운영 데이터 정합성 · 이력 추적 ──────────────────────
+         14.22.0 재무 숫자 전수 점검 — ① 가입비 원 단위 입력 1건(330억 집계) 수정 + 저장 시 원→만원 확인,
+                 단위 오류·「분납중인데 잔금 0」 경고 표시 ② 통합 대시보드: 매출관리 집계에서 미진행·장기보류 제외
+                 (매출관리 대시보드와 동일), 참포스 「총 매출」을 정산원장 누적으로 교정(기존: 한 달치 월요금),
+                 상담→가입 전환율을 가맹상담 대시보드와 같은 기준(가입완료 건)으로, 가입→참포스 막대·숫자 기준 통일
+                 ③ 참포스 대시보드 누적 매출에서 원장 이전 추정치 제외 ④ 이전 약국 이력에 히스토리 원문 표시·시간순 정렬
          14.21.0 참포스 월별 정산관리 정렬 — 기본 약국명 가나다순 고정(생성/갱신해도 순서 유지),
                  약국명·약사명·월요금·정산금액 헤더 클릭 정렬(▼내림→▲오름→해제),
                  정렬·제외 전환 시 저장 전 입력값/체크 유지, 엑셀 다운로드도 화면 순서와 동일
@@ -196,7 +201,7 @@
           1.0.0  최초 개발 착수 (2026-05-26) — 가맹상담·가입자관리·
                  개설행정·인익스테리어 4개 탭 기반 구축                    [MAJOR]
     ══════════════════════════════════════════════════════════════════ -->
-    <script>window.APP_VERSION = '14.21.0';</script>
+    <script>window.APP_VERSION = '14.22.0';</script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 카카오 지도 SDK — 도로명주소를 지번주소로 변환해 지점명이 자동 산출되게 함 -->
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=c4428bbe90244befd058e5fd4fb8773f&libraries=services&autoload=false"></script>
@@ -1428,7 +1433,7 @@
         <div class="max-w-[1400px] mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
                 <h1 class="text-lg font-bold flex items-center gap-2">
-                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.21.0</span>
+                    <span class="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-widest" id="app-version-badge">v14.22.0</span>
                     참메이트 통합관리 시스템
                 </h1>
             </div>
@@ -3666,6 +3671,65 @@
         // 합계 전체가 NaN 으로 번져 화면에는 0(또는 —)으로만 보인다.
         // 저장 시점에 막는 것이 원칙이지만, 과거 데이터를 위해 탐지 기능을 둔다.
         window.NUMERIC_FIELDS = ['joinFee','joinPaid','joinDiscount','joinPoint','depositPaid','paymentRemain','size'];
+        // ── 금액 단위 오류 탐지 (v14.22.0) ──
+        // 가입비 칸은 '만원' 단위다. 원 단위로 입력하면(예: 3,300,000) 1건이 330억으로 집계되어
+        // 전체 가입금액이 수십억~수백억 부풀려진다. 가입비는 최대 수백만원이므로 3,000만원 초과는 단위 오류로 본다.
+        window.MONEY_FIELDS = ['joinFee','joinPaid','joinDiscount','joinPoint','depositPaid','paymentRemain'];
+        window.MONEY_UNIT_LIMIT = 3000;
+        window.detectUnitSuspect = function(){
+            const out = [];
+            (window.memberList||[]).forEach(r=>{
+                if(r._deleted) return;
+                window.MONEY_FIELDS.forEach(f=>{
+                    const v = parseFloat(r[f]);
+                    if(!isNaN(v) && v > window.MONEY_UNIT_LIMIT) out.push({ id:r.id, name:r.name, pharmacy:r.pharmacy, field:f, value:r[f] });
+                });
+                (Array.isArray(r.installments)?r.installments:[]).forEach((it,i)=>{
+                    const v = parseFloat(it && it.amount);
+                    if(!isNaN(v) && v > window.MONEY_UNIT_LIMIT) out.push({ id:r.id, name:r.name, pharmacy:r.pharmacy, field:`분납 ${i+1}회차`, value:it.amount });
+                });
+            });
+            return out;
+        };
+        // ── '분납중'인데 잔금 0 탐지 (v14.22.0) ──
+        // 잔금이 0이면 시스템은 전액 입금(완납)으로 계산한다. 상태는 분납중으로 남아 있어
+        // 실제로 다 받은 것인지, 잔금을 몰라 0으로 둔 것인지 구분이 안 된다 → 확인 대상으로 표시.
+        window.detectStalePartial = function(){
+            return (window.memberList||[]).filter(r=>{
+                if(r._deleted || r.payment !== '분납중') return false;
+                const fee = parseFloat(r.joinFee||0);
+                return fee > 0 && window.computeJoinPaid(r) >= fee;
+            });
+        };
+        // ── 참포스 누적 매출 (v14.22.0) ──
+        // 정산원장(월별 실제 청구 대상)이 있는 달만 합산한다. 원장 이전 달을 '가입월에 1개월치'로
+        // 끼워 넣던 방식은 실제 매출이 아니므로 누적에서 제외한다.
+        window.posLedgerTotals = function(){
+            const led = window.posMonthlyLedger || {};
+            let fee = 0, sett = 0; const months = [];
+            Object.keys(led).sort().forEach(m=>{
+                const ids = Object.keys(led[m]||{}); if(!ids.length) return;
+                months.push(m);
+                ids.forEach(id=>{ fee += parseFloat(led[m][id].fee)||0; sett += parseFloat(led[m][id].settlement)||0; });
+            });
+            return { fee, sett, margin: fee - sett, first: months[0]||'', last: months[months.length-1]||'' };
+        };
+        // 매출관리 집계 대상: 미진행(드롭)·장기보류는 매출로 보지 않는다 (매출관리 대시보드와 동일 기준)
+        window.isInteriorRevenue = r => r && r.status !== '미진행' && r.status !== '장기보류';
+        // 대시보드 상단 데이터 점검 경고 (가입자 대시보드·통합 대시보드 공용)
+        window.renderMoneyIntegrityAlerts = function(){
+            const u = window.detectUnitSuspect ? window.detectUnitSuspect() : [];
+            const sp = window.detectStalePartial ? window.detectStalePartial() : [];
+            const spAmt = sp.reduce((s,r)=>s+(parseFloat(r.joinFee)||0),0);
+            return (u.length ? `<div class="bg-red-50 border border-red-200 rounded-xl p-2.5 mb-3">
+                    <p class="text-[11px] font-bold text-red-800"><i class="fa-solid fa-circle-exclamation mr-1"></i>금액 단위 오류 의심 ${u.length}건</p>
+                    <p class="text-[10px] text-red-700 mt-1 leading-relaxed">가입비 칸은 <b>만원 단위</b>입니다. 원 단위로 입력되어 합계가 크게 부풀려졌을 수 있습니다.<br><span class="text-red-600">${u.slice(0,6).map(x=>`${x.name}/${x.pharmacy} · ${x.field}=${x.value}`).join('<br>')}${u.length>6?`<br>외 ${u.length-6}건`:''}</span></p>
+                </div>` : '') +
+                (sp.length ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
+                    <p class="text-[11px] font-bold text-amber-800"><i class="fa-solid fa-circle-question mr-1"></i>분납중인데 잔금 0 — ${sp.length}명 (${window.fmtAmt(spAmt)})</p>
+                    <p class="text-[10px] text-amber-700 mt-1 leading-relaxed">잔금이 0이라 <b>전액 입금으로 계산</b>되고 있습니다. 실제 완납이면 납입상태를 「완납」으로, 아니면 잔금을 입력해 주세요.<br><span class="text-amber-600">${sp.slice(0,8).map(r=>`${r.name}/${r.pharmacy||'-'}`).join(' · ')}${sp.length>8?` 외 ${sp.length-8}명`:''}</span></p>
+                </div>` : '');
+        };
         window.detectNumericCorruption = function(){
             const out = [];
             (window.memberList||[]).forEach(r=>{
@@ -4641,6 +4705,7 @@
                     <p class="text-[11px] font-bold text-red-800"><i class="fa-solid fa-circle-exclamation mr-1"></i>금액 필드 오류 ${bad.length}건</p>
                     <p class="text-[10px] text-red-700 mt-1 leading-relaxed">숫자여야 할 항목에 문자가 들어가 <b>합계가 계산되지 않습니다.</b> 해당 회원을 수정해 주세요.<br><span class="text-red-600">${bad.slice(0,6).map(b=>`${b.name}/${b.pharmacy} · ${b.field}="${b.value}"`).join(' · ')}${bad.length>6?` 외 ${bad.length-6}건`:''}</span></p>
                 </div>` : ''; })()}
+            ${window.renderMoneyIntegrityAlerts ? window.renderMoneyIntegrityAlerts() : ''}
             ${(()=>{ const miss=(window.detectMissingExempt?window.detectMissingExempt():[]);
                 return miss.length ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-2.5 mb-3">
                     <p class="text-[11px] font-bold text-amber-800"><i class="fa-solid fa-triangle-exclamation mr-1"></i>면제 누락 의심 ${miss.length}건</p>
@@ -5058,17 +5123,21 @@
                 if(r.newborn==='뉴본') nbCnt++;
                 else if(r.newborn==='리본') rbCnt++;
             });
-            const tIntE=interiors.reduce((s,r)=>s+(parseFloat(r.intEstimate||0)),0),tExtE=interiors.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
-            const tChamE=interiors.reduce((s,r)=>s+(parseFloat(r.chamEstimate||0)),0),tPcpkgE=interiors.reduce((s,r)=>s+(parseFloat(r.pcpkgEstimate||0)),0);
-            const tIntM=interiors.reduce((s,r)=>s+cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0),0);
+            // 매출 집계는 미진행(드롭)·장기보류 제외 — 매출관리 대시보드와 같은 기준 (v14.22.0)
+            const intRev=interiors.filter(window.isInteriorRevenue);
+            const tIntE=intRev.reduce((s,r)=>s+(parseFloat(r.intEstimate||0)),0),tExtE=intRev.reduce((s,r)=>s+(parseFloat(r.extEstimate||0)),0);
+            const tChamE=intRev.reduce((s,r)=>s+(parseFloat(r.chamEstimate||0)),0),tPcpkgE=intRev.reduce((s,r)=>s+(parseFloat(r.pcpkgEstimate||0)),0);
+            const tIntM=intRev.reduce((s,r)=>s+cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0),0);
             const posAll=(window.posList||[]).filter(r=>!r._deleted);
             const posV2=posAll.filter(r=>r.version==='V2.0'),posV1=posAll.filter(r=>r.version==='V1.0');
             const pF=posV2.reduce((s,r)=>s+(parseFloat(r.monthlyFee||0)),0),pS=posV2.reduce((s,r)=>s+(parseFloat(r.settlement||0)),0),pM=pF-pS;
             const pCR=members.length>0?Math.round(posV2.length/members.length*100):0;
+            const posCum=window.posLedgerTotals();
 
             // 전환율 분자/분모
             // ① 가맹상담→가입: 누적 전체 데이터
-            const c2m_n=members.length, c2m_d=consults.length;
+            // 상담 중 실제 가입완료 건 기준 (가맹상담 대시보드와 동일). 기존엔 상담 없이 가입한 회원까지 분자에 넣어 높게 나왔음.
+            const c2m_n=consults.filter(r=>r.status==='가입완료').length, c2m_d=consults.length;
             // ② 나머지 전환율: 2026년 이후 데이터만 (이전 데이터 미입력으로 왜곡 방지)
             const CUT='2026';
             const members26=members.filter(r=>(r.date||'').startsWith(CUT));
@@ -5102,7 +5171,7 @@
             const md={};const gc=m=>{if(!md[m])md[m]={c:0,j:0,nb:0,rb:0,f:0,p:0,rm:0,pt:0,iE:0,iM:0,iC:0,iT:0,pc:0,pf:0,ps:0};return md[m];};
             consults.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){gc(m).c++;if(r.status==='가입완료')gc(m).j++;}});
             members.forEach(r=>{const m=(r.date||'').slice(0,7);if(m){const g=gc(m);g.nb+=(r.newborn==='뉴본'?1:0);g.rb+=(r.newborn==='리본'?1:0);const _f=parseFloat(r.joinFee||0),_p=window.computeJoinPaid(r);g.f+=_f;g.p+=_p;g.rm+=(r.payment==='면제'?0:Math.max(0,_f-_p));g.pt+=parseFloat(r.joinPoint||0);}});
-            interiors.forEach(r=>{const m=(r.registerDate||r.completeDate||'').slice(0,7);if(m){gc(m).iT++;if(r.status==='완료')gc(m).iC++;gc(m).iE+=parseFloat(r.intEstimate||0)+parseFloat(r.extEstimate||0)+parseFloat(r.chamEstimate||0)+parseFloat(r.pcpkgEstimate||0);gc(m).iM+=cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0);}});
+            interiors.forEach(r=>{const m=(r.registerDate||r.completeDate||'').slice(0,7);if(m){gc(m).iT++;if(r.status==='완료')gc(m).iC++;if(!window.isInteriorRevenue(r))return;gc(m).iE+=parseFloat(r.intEstimate||0)+parseFloat(r.extEstimate||0)+parseFloat(r.chamEstimate||0)+parseFloat(r.pcpkgEstimate||0);gc(m).iM+=cM(r.intEstimate||0,r.intMarginRate||r.marginRate||0)+cM(r.extEstimate||0,r.extMarginRate||r.marginRate||0)+cM(r.chamEstimate||0,r.chamMarginRate||0)+cM(r.pcpkgEstimate||0,r.pcpkgMarginRate||0);}});
             const _posLedger = window.posMonthlyLedger || {};
             // 포스 "신규 가입자" 수는 정산원장(그 달 결제대상 계정 수)이 아니라
             // 항상 실제 가입일(date) 기준으로 집계 — 정산원장을 쓰면 "그 달에 정산된 기존 계정 수"가
@@ -5168,7 +5237,7 @@
                     <div class="flex items-center gap-2"><span class="w-24 text-slate-500 shrink-0">상담→가입</span><div class="flex-1 bg-slate-200 rounded-full h-2.5"><div class="bg-emerald-400 h-full rounded-full" style="width:${pct(c2m_n,c2m_d)}%"></div></div><span class="font-bold w-8 text-right text-emerald-600">${pct(c2m_n,c2m_d)}%</span><span class="text-[9px] text-slate-400 shrink-0">${c2m_n}/${c2m_d}명</span></div>
                     <div class="flex items-center gap-2"><span class="w-24 text-slate-500 shrink-0">가입→개설행정</span><div class="flex-1 bg-slate-200 rounded-full h-2.5"><div class="bg-blue-400 h-full rounded-full" style="width:${pct(m2a_n,m2a_d)}%"></div></div><span class="font-bold w-8 text-right text-blue-600">${pct(m2a_n,m2a_d)}%</span><span class="text-[9px] text-slate-400 shrink-0">${m2a_n}/${m2a_d}명</span></div>
                     <div class="flex items-center gap-2"><span class="w-24 text-slate-500 shrink-0">가입→인익스</span><div class="flex-1 bg-slate-200 rounded-full h-2.5"><div class="bg-purple-400 h-full rounded-full" style="width:${pct(m2i_n,m2i_d)}%"></div></div><span class="font-bold w-8 text-right text-purple-600">${pct(m2i_n,m2i_d)}%</span><span class="text-[9px] text-slate-400 shrink-0">${m2i_n}/${m2i_d}명</span></div>
-                    <div class="flex items-center gap-2"><span class="w-24 text-slate-500 shrink-0">가입→참포스</span><div class="flex-1 bg-slate-200 rounded-full h-2.5"><div class="bg-sky-400 h-full rounded-full" style="width:${pCR}%"></div></div><span class="font-bold w-8 text-right text-sky-600">${pCR}%</span><span class="text-[9px] text-slate-400 shrink-0">${m2p_n}/${m2p_d}명</span></div>
+                    <div class="flex items-center gap-2"><span class="w-24 text-slate-500 shrink-0">가입→참포스</span><div class="flex-1 bg-slate-200 rounded-full h-2.5"><div class="bg-sky-400 h-full rounded-full" style="width:${pct(m2p_n,m2p_d)}%"></div></div><span class="font-bold w-8 text-right text-sky-600">${pct(m2p_n,m2p_d)}%</span><span class="text-[9px] text-slate-400 shrink-0">${m2p_n}/${m2p_d}명</span></div>
                 </div></div>
 
                 <!-- 참포스 현황 (전환율 뒤로) -->
@@ -5190,6 +5259,7 @@
 
             <!-- ─ 탭2: 재무 분석 ─ -->
             <div id="dash-section-1" class="hidden">
+                ${window.renderMoneyIntegrityAlerts ? window.renderMoneyIntegrityAlerts() : ''}
                 <div class="bg-blue-50 rounded-xl p-3 border mb-3"><p class="text-xs font-bold text-blue-700 mb-2"><i class="fa-solid fa-won-sign mr-1"></i>가입비 현황</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                     <div class="flex justify-between gap-2"><span class="text-slate-500 flex-shrink-0">전체 가입금액</span><span class="font-bold text-right">${window.fmtAmt(tFee)}</span></div>
@@ -5199,7 +5269,7 @@
                     <div class="flex justify-between gap-2"><span class="text-slate-400 flex-shrink-0">가맹비 할인 <span class="text-[9px]">(누적·반영완료)</span></span><span class="font-bold text-slate-400 text-right">${window.fmtAmt(tDisc)}</span></div>
                     <div class="col-span-1 sm:col-span-2 border-t border-blue-200 pt-1.5 flex justify-between gap-2 font-bold text-blue-700"><span>실마진 (실입금 − 포인트)</span><span class="text-right">${window.fmtAmt(tPaid-tPt)}</span></div>
                 </div></div>
-                <div class="bg-teal-50 rounded-xl p-3 border mb-3"><p class="text-xs font-bold text-teal-700 mb-2"><i class="fa-solid fa-paint-roller mr-1"></i>매출관리 수익 현황</p>
+                <div class="bg-teal-50 rounded-xl p-3 border mb-3"><p class="text-xs font-bold text-teal-700 mb-2"><i class="fa-solid fa-paint-roller mr-1"></i>매출관리 수익 현황 <span class="text-[9px] font-normal text-slate-400">(미진행·장기보류 제외)</span></p>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5 text-[11px] sm:text-xs">
                     <div class="flex justify-between gap-1"><span class="text-slate-500 flex-shrink-0">인테리어</span><span class="font-bold text-right truncate">${window.fmtAmt(tIntE)}</span></div>
                     <div class="flex justify-between gap-1"><span class="text-slate-500 flex-shrink-0">익스테리어</span><span class="font-bold text-right truncate">${window.fmtAmt(tExtE)}</span></div>
@@ -5212,10 +5282,11 @@
                 </div></div>
                 <div class="bg-purple-50 rounded-xl p-3 border mb-3"><p class="text-xs font-bold text-purple-700 mb-2"><i class="fa-solid fa-cash-register mr-1"></i>참포스 매출 현황 (V2.0)</p>
                 <div class="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-blue-500 font-bold truncate">총 매출</p><p class="text-xs sm:text-base font-black text-blue-700 truncate">${window.fmtAmt(pF)}</p></div>
-                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-orange-500 font-bold truncate">올댓페이 정산</p><p class="text-xs sm:text-base font-black text-orange-700 truncate">${window.fmtAmt(pS)}</p></div>
-                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">정산 후 마진</p><p class="text-xs sm:text-base font-black text-emerald-700 truncate">${window.fmtAmt(pM)}</p></div>
-                </div></div>
+                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-blue-500 font-bold truncate">누적 매출</p><p class="text-xs sm:text-base font-black text-blue-700 truncate">${window.fmtAmt(posCum.fee)}</p><p class="text-[9px] text-slate-400 truncate">월 ${window.fmtAmt(pF)}</p></div>
+                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-orange-500 font-bold truncate">누적 올댓페이 정산</p><p class="text-xs sm:text-base font-black text-orange-700 truncate">${window.fmtAmt(posCum.sett)}</p><p class="text-[9px] text-slate-400 truncate">월 ${window.fmtAmt(pS)}</p></div>
+                    <div class="bg-white rounded-xl p-2 border min-w-0"><p class="text-[9px] text-emerald-500 font-bold truncate">누적 정산 후 마진</p><p class="text-xs sm:text-base font-black text-emerald-700 truncate">${window.fmtAmt(posCum.margin)}</p><p class="text-[9px] text-slate-400 truncate">월 ${window.fmtAmt(pM)}</p></div>
+                </div>
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 누적 = 월별 정산원장 합계${posCum.first?` (${posCum.first} ~ ${posCum.last})`:''} · 「월」= 현재 V2.0 약국 월요금 합계</p></div>
                 ${sM.length>0?`<div><p class="text-xs font-bold text-slate-700 mb-2"><i class="fa-solid fa-calendar-alt text-indigo-500 mr-1"></i>월별 재무 현황</p>
                 ${(()=>{
                     const net=d=>(d.p||0)-(d.pt||0)+(d.iM||0)+((d.pf||0)-(d.ps||0));
@@ -5247,7 +5318,7 @@
                     return bTable([['가입비 실입금','text-emerald-600'],['미수금','text-amber-600'],['매출관리 마진','text-purple-600'],['포스 마진','text-sky-600'],['순마진','text-blue-700']],
                     (d,m)=>cells(d), totalsRow, true);
                 })()}
-                <p class="text-[9px] text-slate-400 mt-1.5">※ 순마진 = 가입비 실입금 − 포인트 지급 + 매출관리 마진 + 포스 마진<br>※ 매출관리 마진은 견적 × 마진율 기준 예상치입니다. 시공·정산 완료 전 금액이 포함될 수 있습니다.</p></div>`:''}
+                <p class="text-[9px] text-slate-400 mt-1.5">※ 순마진 = 가입비 실입금 − 포인트 지급 + 매출관리 마진 + 포스 마진<br>※ 가입비는 실제 입금일이 아닌 <b>가입월</b>에 귀속됩니다.<br>※ 매출관리 마진은 견적 × 마진율 기준 예상치입니다(미진행·장기보류 제외). 시공·정산 완료 전 금액이 포함될 수 있습니다.</p></div>`:''}
             </div>`;
 
             document.getElementById('admin-dashboard-modal').style.display='flex';
@@ -6402,8 +6473,10 @@
             });
             const months = Object.keys(monthMap).sort().slice(-6);
             // 전체 기간 누적 합계 (월 슬라이스 전, monthMap 전체 기준)
-            const cumulativeFee = Object.values(monthMap).reduce((s,d)=>s+d.fee,0);
-            const cumulativeSett = Object.values(monthMap).reduce((s,d)=>s+d.sett,0);
+            // 누적은 정산원장이 있는 달만 (원장 이전 달의 '가입월 1개월치' 추정값은 실제 매출이 아니므로 제외) — v14.22.0
+            const _cum = window.posLedgerTotals();
+            const cumulativeFee = _cum.fee;
+            const cumulativeSett = _cum.sett;
             const cumulativeMargin = cumulativeFee - cumulativeSett;
             const periodFee = months.reduce((s,m)=>s+monthMap[m].fee,0);
             const periodSett = months.reduce((s,m)=>s+monthMap[m].sett,0);
@@ -6436,7 +6509,7 @@
                     </div>
                 </div>
                 <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-3 mb-3 text-white">
-                    <p class="text-[10px] font-bold opacity-80 mb-2"><i class="fa-solid fa-coins mr-1"></i>총 매출 현황 (누적, V2.0 기준)</p>
+                    <p class="text-[10px] font-bold opacity-80 mb-2"><i class="fa-solid fa-coins mr-1"></i>총 매출 현황 (누적, V2.0 · 정산원장${_cum.first?` ${_cum.first}~${_cum.last}`:''} 기준)</p>
                     <div class="grid grid-cols-3 gap-2">
                         <div class="bg-white/15 rounded-xl p-2 text-center min-w-0"><p class="text-[9px] opacity-70 truncate">누적 총 매출</p><p class="text-xs sm:text-lg font-black truncate">${window.fmtAmt(cumulativeFee)}</p></div>
                         <div class="bg-white/15 rounded-xl p-2 text-center min-w-0"><p class="text-[9px] opacity-70 truncate">누적 올댓페이 정산</p><p class="text-xs sm:text-lg font-black truncate">${window.fmtAmt(cumulativeSett)}</p></div>
@@ -7427,12 +7500,29 @@
                             // 이전 약국 이력 (히스토리 승계로 이어받은 경우)
                             const hist = Array.isArray(r.pharmacyHistory) ? r.pharmacyHistory : [];
                             if(!hist.length) return '';
-                            const items = hist.slice().reverse().map(h=>{
-                                const meta=[h.joinDate?'가입 '+esc(h.joinDate):'', h.openDate?'개국 '+esc(h.openDate):'',
-                                            h.endReason?'종료사유 '+esc(h.endReason):''].filter(Boolean).join(' · ');
+                            // v14.22.0: 연결된 이전 기록(아카이브)의 최신 값(종료사유·종료일·히스토리 메모)을 함께 보여준다.
+                            //           순서는 개국일 기준 최신순(저장 순서가 뒤섞여 있어도 시간순으로 표시).
+                            const _all = window.memberList || [];
+                            const rows = hist.map(h=>{
+                                const a = h.memberId ? _all.find(x=>String(x.id)===String(h.memberId)) : null;
+                                return {
+                                    h, a,
+                                    pharmacy: (a && a.pharmacy) || h.pharmacy,
+                                    openDate: h.openDate || (a && a.openDate) || '',
+                                    endReason: (a && a._archiveReason) || h.endReason || '',
+                                    endDate: (a && a.endDate) || h.endedAt || '',
+                                    note: String((a && a.memo) || h.note || '').trim()
+                                };
+                            }).sort((x,y)=> String(y.openDate||'').localeCompare(String(x.openDate||'')));
+                            const items = rows.map(x=>{
+                                const h = x.h;
+                                const meta=[h.joinDate?'가입 '+esc(h.joinDate):'', x.openDate?'개국 '+esc(x.openDate):'',
+                                            x.endDate?'종료 '+esc(String(x.endDate).slice(0,10)):'',
+                                            x.endReason?'종료사유 '+esc(x.endReason):''].filter(Boolean).join(' · ');
                                 return `<div class="border-l-2 border-slate-300 pl-2 py-1">
-                                    <p class="text-xs font-bold text-slate-700">${esc(h.pharmacy||'약국명 미상')}</p>
+                                    <p class="text-xs font-bold text-slate-700">${esc(x.pharmacy||'약국명 미상')}</p>
                                     <p class="text-[10px] text-slate-400">${meta||'-'}</p>
+                                    ${x.note?`<details class="mt-1" onclick="event.stopPropagation()"><summary class="text-[10px] text-slate-500 font-bold cursor-pointer select-none">히스토리 보기</summary><div class="mt-1 text-[11px] text-slate-600 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded p-2 max-h-72 overflow-y-auto">${esc(x.note)}</div></details>`:''}
                                     ${h.memberId?`<button onclick="event.stopPropagation();openViewModalPush('member','${esc(h.memberId)}')" class="text-[10px] text-blue-600 hover:underline font-bold mt-0.5">이전 기록 보기 →</button>`:''}
                                 </div>`;
                             }).join('');
@@ -7977,6 +8067,23 @@
                 installments: getInstallmentData(),
             };
             if(!record.name){alert('약사명을 입력하세요');return;}
+            // ★ 금액 단위 방어 (v14.22.0): 가입비 칸은 만원 단위. 원 단위(예: 3300000)로 입력되면
+            //   1건이 수백억으로 집계되므로 저장 전에 만원으로 바꿀지 확인한다.
+            {
+                const LIM = window.MONEY_UNIT_LIMIT || 3000;
+                const LABEL = {joinFee:'전체 가입금액', joinPaid:'실 입금액', joinDiscount:'가맹비 할인', joinPoint:'포인트', depositPaid:'계약금', paymentRemain:'잔금'};
+                const bad = Object.keys(LABEL).filter(k=>parseFloat(record[k]) > LIM);
+                const badInst = (record.installments||[]).filter(it=>parseFloat(it&&it.amount) > LIM);
+                if(bad.length || badInst.length){
+                    const lines = bad.map(k=>`· ${LABEL[k]}: ${Number(record[k]).toLocaleString()} → ${Number(record[k])/10000}만원`)
+                        .concat(badInst.map(it=>`· 분납 회차: ${Number(it.amount).toLocaleString()} → ${Number(it.amount)/10000}만원`));
+                    const ok = confirm('금액이 원 단위로 입력된 것 같습니다. (가입비 칸은 만원 단위)\n\n' + lines.join('\n') + '\n\n[확인] 만원으로 바꿔 저장 / [취소] 저장하지 않고 돌아가기');
+                    if(!ok) return;
+                    const conv = v => String(Math.round(Number(v)/10000*100)/100);
+                    bad.forEach(k=>{ record[k] = conv(record[k]); });
+                    badInst.forEach(it=>{ it.amount = conv(it.amount); });
+                }
+            }
             // ★ 히스토리 승계: 아카이브에서 이어받은 경우 연결 정보를 함께 저장
             if(!editId && window._succMeta){
                 record.successorOf     = window._succMeta.successorOf;
